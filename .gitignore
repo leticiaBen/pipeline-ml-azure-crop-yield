@@ -1,12 +1,37 @@
+# ---- Python ----
 __pycache__/
 *.pyc
 .venv/
 venv/
-.env
+
+# ---- Node ----
 node_modules/
-.DS_Store
+
+# ---- Secrets : une cle commitee = -2 points (bareme, section 10) ----
+.env
+local.settings.json
+.azure/
+
+# ---- Modeles serialises ----
 *.pkl
 *.joblib
+# Exception : le modele versionne est un livrable (L1, section 4.1)
+!model/model-*.joblib
+
+# ---- Donnees brutes (telechargees par train.py) ----
 data/
+
+# ---- Azurite (emulateur de stockage local) ----
+__blobstorage__/
+__queuestorage__/
+__azurite_db*__.json
+
+# ---- Terraform / Bicep ----
 .terraform/
 *.tfstate*
+
+# ---- Sujet du projet : document de cours, non redistribue ----
+docs/PROJET_FR.pdf
+
+# ---- Divers ----
+.DS_Store
