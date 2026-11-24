@@ -15,13 +15,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Dockerfile multi-étapes, construction et réduction de l'image, tests du conteneur de bout en bout | 1h20 | Image initiale à 816 Mo contre une limite de 500 Mo ; `docker images` annonce une taille trompeuse |
 | 24/11/2026 | leticiaBen | Section 4.6 : `ci.yml` (lint, tests, image GHCR), trois garde-fous automatisés, config ruff centralisée | 0h50 | Mesure de taille initialement fondée sur le mauvais chiffre ; versions d'actions obsolètes |
 | 24/11/2026 | leticiaBen | Réattribution des 4 commits au compte GitHub | 0h15 | Aucune identité Git sur la machine : les 3 premiers commits n'étaient rattachés à aucun compte |
+| 24/11/2026 | leticiaBen | Labels OCI sur l'image et contrôle en CI | 0h20 | Le Dockerfile n'avait aucun LABEL : le paquet GHCR n'était relié à aucun dépôt |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 8h50 |
+| leticiaBen | 9h10 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -203,6 +204,14 @@ requête anonyme au registre, qui est exactement ce que fera Container Apps : HT
 prévoit les deux cas — image publique tirée sans identifiants, ou image privée avec
 `--registry-server ghcr.io` et un jeton en lecture seule stocké comme secret Container Apps. Le
 plus simple est de passer le paquet en public depuis ses *Package settings*.
+
+**24/11/2026 — Le paquet GHCR n'était relié à aucun dépôt.** Le Dockerfile ne contenait aucun
+`LABEL`, donc pas de `org.opencontainers.image.source`. Conséquence : le paquet n'apparaissait pas
+dans l'onglet *Packages* du dépôt et sa page n'affichait aucun lien vers le code — un correcteur
+ne l'aurait trouvé qu'en fouillant le profil. Labels OCI ajoutés, dont `revision` renseigné depuis
+`github.sha` pour qu'une image récupérée du registre dise de quel commit elle vient. L'`ARG` est
+placé après les `COPY` : il change à chaque commit et invaliderait sinon le cache de la couche
+lourde du venv. Une étape de CI vérifie désormais les deux labels.
 
 ## Prochaines étapes
 

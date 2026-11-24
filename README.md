@@ -322,9 +322,19 @@ machine et non par la mémoire :
 |---|---|---|
 | Taille du système de fichiers de l'image | < 500 Mo | 348 Mo |
 | Utilisateur du conteneur | non root | `uid=10001` |
+| Label `org.opencontainers.image.source` | l'URL du dépôt | conforme |
+| Label `org.opencontainers.image.revision` | le SHA du commit | conforme |
 | Test de fumée : `/health` | 200 | 200 |
 | Test de fumée : `/predict` | 200 | `410147.94` hg/ha en 51,65 ms |
 | Test de fumée : pluviométrie négative | 422 | 422 |
+
+L'image porte les **labels OCI standards**. Celui qui compte est
+`org.opencontainers.image.source` : c'est lui qui relie le paquet au dépôt sur GHCR, ce qui le
+fait apparaître dans l'onglet *Packages* et affiche un lien vers le code sur sa page.
+`org.opencontainers.image.revision` est renseigné depuis `github.sha`, de sorte qu'une image
+récupérée du registre dit de quel commit elle vient — en plus de son étiquette. Les deux sont
+vérifiés par la CI : si le label `source` disparaissait, le paquet redeviendrait orphelin sans
+que personne ne s'en aperçoive.
 
 Les étiquettes suivent l'énoncé — version **et** SHA du commit :
 
