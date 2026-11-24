@@ -1,0 +1,70 @@
+# =============================================================================
+#  Application Container Apps servant l'API d'inference — section 4.2
+#
+#  Definition declarative plutot que des drapeaux de ligne de commande : les
+#  sondes liveness et readiness ne sont pas exprimables avec les options de
+#  « az containerapp create », et un fichier versionne documente la
+#  configuration exacte.
+#
+#  __MANAGED_ENV_ID__ est substitue a l'application par infra/02-api.sh :
+#  l'identifiant contient celui de l'abonnement, qui n'a pas a figurer en
+#  dur dans un depot public.
+# =============================================================================
+type: Microsoft.App/containerApps
+location: francecentral
+tags:
+  projet: dscc
+  equipe: cropyield
+properties:
+  managedEnvironmentId: __MANAGED_ENV_ID__
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true           # accessible depuis Internet
+      targetPort: 8000
+      transport: auto
+      allowInsecure: false     # HTTPS uniquement
+      traffic:
+        - latestRevision: true
+          weight: 100
+  template:
+    containers:
+      - name: api
+        # Image publique sur GHCR : aucune information d'identification de
+        # registre n'est necessaire, donc aucun secret a stocker ici.
+        image: ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api:1.0.0
+        resources:
+          cpu: 0.25            # valeurs imposees par l'enonce
+          memory: 0.5Gi
+        env:
+          - name: MODEL_PATH
+            value: /app/model/model-1.0.0.joblib
+          - name: MODEL_VERSION
+            value: "1.0.0"
+          - name: API_VERSION
+            value: "1.0.0"
+          - name: PORT
+            value: "8000"
+        probes:
+          # Le modele met environ 1,5 s a se charger au demarrage. Une sonde
+          # readiness trop impatiente redemarrerait le conteneur en boucle :
+          # 12 echecs tolerees a 5 s d'intervalle laissent 60 s de marge.
+          - type: Readiness
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          - type: Liveness
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 25
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+    scale:
+      minReplicas: 0           # cout nul au repos, exige par l'enonce
+      maxReplicas: 2

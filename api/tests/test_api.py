@@ -50,7 +50,10 @@ def test_health(client):
 def test_version(client):
     r = client.get("/version")
     assert r.status_code == 200
-    assert set(r.json()) == {"api_version", "model_version"}
+    # Le champ commit permet de verifier qu'un deploiement a bien pris effet :
+    # c'est le critere « visible via GET /version » de la section 4.6.
+    assert set(r.json()) == {"api_version", "model_version", "commit"}
+    assert r.json()["commit"]  # non vide, « inconnu » hors deploiement
 
 
 def test_metrics_compte_les_appels(client, ligne_valide):

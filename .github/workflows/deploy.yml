@@ -1,0 +1,146 @@
+# =============================================================================
+#  Deploiement en production — section 4.6 de l'enonce
+#
+#  Connexion a Azure par OIDC avec l'identite manageee attribuee par
+#  l'utilisateur : aucun mot de passe, aucune cle, aucun secret Azure.
+#  Les trois secrets utilises sont des identifiants non sensibles, portes par
+#  l'environnement « production » et non par le depot.
+#
+#  Declenche APRES la CI et non sur le push : l'image etiquetee avec le SHA
+#  du commit doit exister sur GHCR avant qu'on demande a Container Apps de la
+#  tirer. Deux workflows sur le meme push s'executeraient en parallele, et le
+#  deploiement perdrait la course.
+# =============================================================================
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # Declenchement manuel, utile pour redeployer un commit precis ou rejouer
+  # un deploiement sans toucher au code.
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "SHA complet du commit a deployer (vide = HEAD)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  RG: rg-projet-cropyield
+  APP: api-cropyield
+  IMAGE: ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api
+
+jobs:
+  deploy:
+    name: Mise a jour de l'API en production
+    # Ne deploie que si la CI a reussi : inutile de publier une image dont les
+    # tests ont echoue.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    # Deux roles, et c'est le coeur de la section 4.6 :
+    #   1. porte d'approbation manuelle, avec 5 relecteurs obligatoires
+    #   2. contexte du sujet federe OIDC
+    #      repo:leticiaBen/pipeline-ml-azure-crop-yield:environment:production
+    #      Sans cette ligne, azure/login echoue sur AADSTS700213.
+    environment:
+      name: production
+      url: https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io
+
+    permissions:
+      id-token: write    # obligatoire pour recevoir le jeton OIDC
+      contents: read
+
+    steps:
+      - name: Commit a deployer
+        id: cible
+        # Sur un evenement workflow_run, github.sha designe la pointe de la
+        # branche par defaut, PAS le commit qui a declenche la CI. Il faut
+        # lire head_sha, sinon on deploierait la mauvaise image.
+        run: |
+          sha="${{ github.event.workflow_run.head_sha }}"
+          [ -z "$sha" ] && sha="${{ inputs.sha }}"
+          [ -z "$sha" ] && sha="${{ github.sha }}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Commit cible : $sha"
+
+      - name: L'image existe-t-elle sur GHCR ?
+        # Verification anonyme, comme le fera Container Apps. Echouer ici donne
+        # un message clair, au lieu d'un echec opaque cote Azure.
+        env:
+          SHA: ${{ steps.cible.outputs.sha }}
+        run: |
+          depot="leticiaben/pipeline-ml-azure-crop-yield/api"
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:${depot}:pull&service=ghcr.io" \
+                  | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jeton" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.v2+json' \
+            "https://ghcr.io/v2/${depot}/manifests/${SHA}")
+          echo "manifeste de ${SHA} : HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::image introuvable sur GHCR pour $SHA"; exit 1; }
+
+      - name: Connexion a Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Mise a jour de Container Apps
+        env:
+          SHA: ${{ steps.cible.outputs.sha }}
+        # GIT_SHA est pose en meme temps que l'image : c'est ce qui rend le
+        # deploiement verifiable par GET /version.
+        run: |
+          az containerapp update -n "$APP" -g "$RG" \
+            --image "${IMAGE}:${SHA}" \
+            --set-env-vars "GIT_SHA=${SHA}" \
+            -o none
+          echo "Revision active :"
+          az containerapp revision list -n "$APP" -g "$RG" \
+            --query "[?properties.active].{nom:name, image:properties.template.containers[0].image, replicas:properties.replicas}" \
+            -o table
+
+      - name: Verification — GET /version renvoie le bon commit
+        env:
+          SHA: ${{ steps.cible.outputs.sha }}
+        # C'est le « Termine quand » de la section 4.6 : un commit sur main met
+        # a jour l'API de production, visible via GET /version.
+        run: |
+          api="https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io"
+          for i in $(seq 1 30); do
+            vu=$(curl -s --max-time 30 "$api/version" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("commit",""))' 2>/dev/null || true)
+            echo "tentative $i : commit vu = ${vu:-aucune reponse}"
+            [ "$vu" = "$SHA" ] && break
+            curl -s -o /dev/null --max-time 10 "$api/health" || true
+          done
+          [ "$vu" = "$SHA" ] || { echo "::error::l'API sert encore $vu au lieu de $SHA"; exit 1; }
+
+          echo "### Deploiement en production" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`$SHA\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${IMAGE}:${SHA}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| URL | $api |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fumee en production
+        run: |
+          api="https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io"
+          code=$(curl -s -o /tmp/p.json -w '%{http_code}' --max-time 30 -X POST "$api/predict" \
+            -H 'Content-Type: application/json' \
+            -d '{"Area":"France","Item":"Potatoes","Year":2012,
+                 "average_rain_fall_mm_per_year":867,"pesticides_tonnes":72000,"avg_temp":11.2}')
+          cat /tmp/p.json; echo
+          [ "$code" = "200" ] || { echo "::error::/predict a renvoye $code"; exit 1; }
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$api/predict" \
+            -H 'Content-Type: application/json' \
+            -d '{"Area":"France","Item":"Potatoes","Year":2012,
+                 "average_rain_fall_mm_per_year":-500,"pesticides_tonnes":72000,"avg_temp":11.2}')
+          echo "pluie negative : HTTP $code"
+          [ "$code" = "422" ] || { echo "::error::attendu 422, obtenu $code"; exit 1; }

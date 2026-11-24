@@ -28,6 +28,11 @@ from pydantic import BaseModel, ConfigDict, Field
 API_VERSION = os.getenv("API_VERSION", "1.0.0")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "1.0.0")
 MODEL_PATH = os.getenv("MODEL_PATH", "/app/model/model-1.0.0.joblib")
+# Commit qui a produit l'image en cours d'execution. Renseigne par deploy.yml.
+# Sans lui, le critere « un commit sur main met a jour l'API de production,
+# visible via GET /version » (section 4.6) ne serait pas verifiable : ni
+# api_version ni model_version ne changent d'un commit a l'autre.
+GIT_SHA = os.getenv("GIT_SHA", "inconnu")
 
 # Ordre imposé par le pipeline entraîné : ne pas réarranger.
 FEATURES = ["Area", "Item", "Year", "average_rain_fall_mm_per_year",
@@ -168,7 +173,7 @@ def health() -> dict:
 
 @app.get("/version")
 def version() -> dict:
-    return {"api_version": API_VERSION, "model_version": MODEL_VERSION}
+    return {"api_version": API_VERSION, "model_version": MODEL_VERSION, "commit": GIT_SHA}
 
 
 @app.get("/metrics")
