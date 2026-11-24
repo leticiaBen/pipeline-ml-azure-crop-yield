@@ -18,9 +18,9 @@ import sys
 import time
 
 import joblib
+import kagglehub
 import numpy as np
 import pandas as pd
-import kagglehub
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score

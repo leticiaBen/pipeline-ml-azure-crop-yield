@@ -16,7 +16,6 @@ os.environ.setdefault("MODEL_PATH", str(MODELE))
 @pytest.fixture(scope="session")
 def client():
     from fastapi.testclient import TestClient
-
     from main import app
 
     # Le gestionnaire de contexte déclenche le lifespan, donc le

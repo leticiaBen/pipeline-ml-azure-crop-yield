@@ -11,13 +11,11 @@ de la cible, et compare :
 """
 
 import numpy as np
-import pandas as pd
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
-
 from train import CAT, FEATURES, SEED, TARGET, TRAIN_MAX_YEAR, charger_donnees
 
 

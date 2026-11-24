@@ -1,0 +1,8 @@
+# Configuration de lint unique pour tout le depot : api/ et model/ sont
+# verifies avec les memes regles en local et dans ci.yml, pour que
+# « ca passe chez moi » et « ca passe en CI » veuillent dire la meme chose.
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]

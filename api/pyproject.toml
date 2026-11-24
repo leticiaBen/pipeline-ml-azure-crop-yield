@@ -1,12 +1,4 @@
-# Configuration partagée entre le développement local et ci.yml, pour que
-# « ça passe chez moi » et « ça passe en CI » veuillent dire la même chose.
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B"]
-
+# La configuration de ruff est a la racine (ruff.toml), commune a tout le depot.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]

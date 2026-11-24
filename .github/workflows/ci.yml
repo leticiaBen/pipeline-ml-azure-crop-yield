@@ -1,0 +1,158 @@
+# =============================================================================
+#  Intégration continue — section 4.6 de l'énoncé
+#    lint (ruff), tests (pytest), construction et publication sur GHCR
+#
+#  Aucune ressource Azure n'est touchée ici : ce workflow tourne entièrement
+#  sur les runners GitHub. Le déploiement vers Azure est dans deploy.yml.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Permissions minimales par défaut ; le job image élève packages: write.
+permissions:
+  contents: read
+
+env:
+  IMAGE_VERSION: "1.0.0"
+  TAILLE_MAX_MO: "500"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  qualite:
+    name: Lint et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements-dev.txt
+
+      - name: Dépendances
+        run: pip install -r api/requirements-dev.txt
+
+      - name: Lint — ruff sur api/ et model/
+        run: ruff check .
+
+      - name: Tests — pytest
+        working-directory: api
+        # « python -m pytest » et non « pytest » : la forme -m ajoute le
+        # dossier courant à sys.path, sans quoi « from main import app »
+        # échoue dans les tests.
+        run: python -m pytest -q
+
+  # ---------------------------------------------------------------------------
+  image:
+    name: Image Docker
+    needs: qualite
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Nom de l'image
+        id: nom
+        # GHCR n'accepte que des minuscules, or le compte s'écrit leticiaBen.
+        run: |
+          echo "image=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/api" >> "$GITHUB_OUTPUT"
+
+      - name: Connexion à GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Jeton fourni par GitHub, aucun secret à stocker.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construction
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: api/Dockerfile
+          # load et non push : l'image reste locale au runner le temps des
+          # contrôles ci-dessous. Elle n'est publiée qu'une fois validée.
+          load: true
+          tags: |
+            ${{ steps.nom.outputs.image }}:${{ env.IMAGE_VERSION }}
+            ${{ steps.nom.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Contrôle de la taille
+        # L'énoncé impose une image sous 500 Mo. Le contrôle est automatisé :
+        # une dépendance lourde ajoutée par mégarde fera échouer la CI au lieu
+        # d'être découverte à la soutenance.
+        env:
+          IMG: ${{ steps.nom.outputs.image }}
+        run: |
+          octets=$(docker image inspect "$IMG:$IMAGE_VERSION" --format '{{.Size}}')
+          mo=$((octets / 1000000))
+          echo "Taille de l'image : ${mo} Mo (limite : ${TAILLE_MAX_MO} Mo)"
+          if [ "$mo" -ge "$TAILLE_MAX_MO" ]; then
+            echo "::error::L'image dépasse la limite de ${TAILLE_MAX_MO} Mo"
+            exit 1
+          fi
+
+      - name: Contrôle de l'utilisateur non root
+        env:
+          IMG: ${{ steps.nom.outputs.image }}
+        run: |
+          uid=$(docker run --rm --entrypoint id "$IMG:$IMAGE_VERSION" -u)
+          echo "uid dans le conteneur : $uid"
+          if [ "$uid" = "0" ]; then
+            echo "::error::Le conteneur tourne en root"
+            exit 1
+          fi
+
+      - name: Test de fumée — le conteneur sert vraiment
+        env:
+          IMG: ${{ steps.nom.outputs.image }}
+        run: |
+          docker run -d --name fumee -p 8000:8000 "$IMG:$IMAGE_VERSION"
+          # --retry-all-errors : le proxy accepte la connexion puis la coupe
+          # tant que l'API n'écoute pas, donc --retry-connrefused ne suffit pas.
+          curl -sS --retry 60 --retry-delay 1 --retry-all-errors --retry-connrefused \
+               -m 5 -o /dev/null -w 'health: HTTP %{http_code}\n' \
+               http://127.0.0.1:8000/health
+
+          echo "--- /predict doit répondre 200 ---"
+          code=$(curl -s -o /tmp/p.json -w '%{http_code}' -X POST http://127.0.0.1:8000/predict \
+            -H 'Content-Type: application/json' \
+            -d '{"Area":"France","Item":"Potatoes","Year":2012,
+                 "average_rain_fall_mm_per_year":867,"pesticides_tonnes":72000,"avg_temp":11.2}')
+          cat /tmp/p.json; echo
+          [ "$code" = "200" ] || { echo "::error::/predict a renvoyé $code"; docker logs fumee; exit 1; }
+
+          echo "--- la pluviométrie négative doit répondre 422 ---"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/predict \
+            -H 'Content-Type: application/json' \
+            -d '{"Area":"France","Item":"Potatoes","Year":2012,
+                 "average_rain_fall_mm_per_year":-500,"pesticides_tonnes":72000,"avg_temp":11.2}')
+          echo "pluie négative : HTTP $code"
+          [ "$code" = "422" ] || { echo "::error::attendu 422, obtenu $code"; exit 1; }
+
+          docker rm -f fumee
+
+      - name: Publication sur GHCR
+        # Seulement sur push vers main : une pull request venant d'un fork
+        # n'a pas le droit d'écrire dans le registre, et n'en a pas besoin.
+        if: github.event_name == 'push'
+        env:
+          IMG: ${{ steps.nom.outputs.image }}
+        run: |
+          docker push "$IMG:$IMAGE_VERSION"
+          docker push "$IMG:${{ github.sha }}"
+          echo "### Image publiée" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`$IMG:$IMAGE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`$IMG:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
