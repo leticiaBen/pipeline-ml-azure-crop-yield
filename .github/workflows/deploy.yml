@@ -64,25 +64,31 @@ jobs:
         # lire head_sha, sinon on deploierait la mauvaise image.
         run: |
           sha="${{ github.event.workflow_run.head_sha }}"
-          [ -z "$sha" ] && sha="${{ inputs.sha }}"
-          [ -z "$sha" ] && sha="${{ github.sha }}"
+          if [ -z "$sha" ]; then sha="${{ inputs.sha }}"; fi
+          if [ -z "$sha" ]; then sha="${{ github.sha }}"; fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Commit cible : $sha"
 
       - name: L'image existe-t-elle sur GHCR ?
-        # Verification anonyme, comme le fera Container Apps. Echouer ici donne
-        # un message clair, au lieu d'un echec opaque cote Azure.
+        # Echouer ici donne un message clair, au lieu d'un echec opaque cote
+        # Azure.
+        #
+        # « docker manifest inspect » plutot qu'une requete curl a la main :
+        # l'outil negocie lui-meme les types de manifeste. Une premiere
+        # version interrogeait le registre avec un en-tete Accept incomplet et
+        # recevait un 404 trompeur — GHCR repond 404, et non 406, quand
+        # l'en-tete ne couvre pas le type exact du manifeste. Celui de cette
+        # image est application/vnd.oci.image.manifest.v1+json, que l'en-tete
+        # omettait. Le deploiement a echoue alors que l'image etait bien la.
         env:
           SHA: ${{ steps.cible.outputs.sha }}
         run: |
-          depot="leticiaben/pipeline-ml-azure-crop-yield/api"
-          jeton=$(curl -s "https://ghcr.io/token?scope=repository:${depot}:pull&service=ghcr.io" \
-                  | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jeton" \
-            -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.v2+json' \
-            "https://ghcr.io/v2/${depot}/manifests/${SHA}")
-          echo "manifeste de ${SHA} : HTTP $code"
-          [ "$code" = "200" ] || { echo "::error::image introuvable sur GHCR pour $SHA"; exit 1; }
+          if docker manifest inspect "${IMAGE}:${SHA}" > /dev/null 2>&1; then
+            echo "Image presente sur GHCR : ${IMAGE}:${SHA}"
+          else
+            echo "::error::image introuvable sur GHCR pour ${SHA}"
+            exit 1
+          fi
 
       - name: Connexion a Azure (OIDC)
         uses: azure/login@v2
