@@ -13,13 +13,15 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Comparaison chiffrée cible brute contre cible en logarithme, par culture ; décision et documentation | 0h20 | — |
 | 24/11/2026 | leticiaBen | Section 4.2 : API FastAPI (4 endpoints, validation Pydantic), 12 tests pytest, configuration ruff | 1h30 | — |
 | 24/11/2026 | leticiaBen | Dockerfile multi-étapes, construction et réduction de l'image, tests du conteneur de bout en bout | 1h20 | Image initiale à 816 Mo contre une limite de 500 Mo ; `docker images` annonce une taille trompeuse |
+| 24/11/2026 | leticiaBen | Section 4.6 : `ci.yml` (lint, tests, image GHCR), trois garde-fous automatisés, config ruff centralisée | 0h50 | Mesure de taille initialement fondée sur le mauvais chiffre ; versions d'actions obsolètes |
+| 24/11/2026 | leticiaBen | Réattribution des 4 commits au compte GitHub | 0h15 | Aucune identité Git sur la machine : les 3 premiers commits n'étaient rattachés à aucun compte |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 7h45 |
+| leticiaBen | 8h50 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -163,7 +165,47 @@ albanaise est sous-estimée de 31 à 34 % sur 2010 et 2011 : son rendement a for
 après 2009, et le modèle n'a appris que jusqu'à cette année-là. Un découpage aléatoire masquerait
 ce défaut. C'est le prix de l'honnêteté de l'évaluation, et un bon sujet de question en soutenance.
 
+**24/11/2026 — Identité Git absente, et commits non rattachés au compte.** Le commit de la
+section 4.2 a d'abord échoué : `impossible de détecter automatiquement l'adresse
+('mac@Mac.(none)' trouvé)`. Les trois commits précédents utilisaient une identité dérivée du nom
+de la machine (`mac@TABLET-VPETFEUC...`, `mac@Mac-de-Leticia.local`), que GitHub ne rattache à
+aucun compte : l'onglet Contributors n'en voyait qu'un sur quatre. Identité posée **localement au
+dépôt** (pas en global) avec l'adresse noreply GitHub, qui rattache les commits au compte sans
+publier d'adresse réelle sur un dépôt public. Les 4 commits ont ensuite été réattribués par
+`filter-branch` et force-poussés avec `--force-with-lease`, après sauvegarde locale et
+vérification arbre par arbre qu'aucun contenu ne changeait. Les dates d'origine sont préservées.
+
+**24/11/2026 — CI verte à la première exécution.** `ci.yml` : job `qualite` (ruff sur `api/` et
+`model/`, 12 tests pytest), puis job `image` (construction, trois contrôles, publication sur
+GHCR). L'image est construite avec `load` et non `push` : elle n'est publiée qu'après validation.
+Étiquetée avec la version et le SHA du commit. Aucun secret, le `GITHUB_TOKEN` de la plateforme
+suffit.
+
+**24/11/2026 — Le contrôle de taille mesurait la mauvaise grandeur.** Première version fondée sur
+`docker image inspect .Size`, qui renvoie la taille du contenu **compressé** : 113 Mo pour cette
+image, alors que son système de fichiers fait 348 Mo sur le runner. Un seuil appliqué à ce chiffre
+aurait laissé passer une image de 600 Mo décompressée sans rien signaler. Le contrôle porte
+désormais sur le système de fichiers réel, mesuré par `du` dans le conteneur, et les deux chiffres
+figurent dans le résumé de l'exécution.
+
+**24/11/2026 — Versions d'actions obsolètes.** Celles écrites de mémoire (`checkout@v4`,
+`setup-python@v5`, `docker/*@v3` et `@v6`) déclenchaient l'avertissement de dépréciation de
+Node 20. Mise à jour vers les majeures actuelles, relevées par l'API GitHub plutôt que supposées :
+`checkout@v7`, `setup-python@v7`, `setup-buildx-action@v4`, `login-action@v4`,
+`build-push-action@v7`. Plus aucune annotation.
+
+**24/11/2026 — Écart de taille d'image entre les deux architectures.** 387 Mo en local (Mac,
+arm64) contre 348 Mo sur le runner (Ubuntu, amd64) : les roues scientifiques compilées pour arm64
+sont plus volumineuses. Les deux passent largement sous les 500 Mo.
+
+**24/11/2026 — Le paquet GHCR est privé, à corriger avant le déploiement.** Vérifié par une
+requête anonyme au registre, qui est exactement ce que fera Container Apps : HTTP 404. L'énoncé
+prévoit les deux cas — image publique tirée sans identifiants, ou image privée avec
+`--registry-server ghcr.io` et un jeton en lecture seule stocké comme secret Container Apps. Le
+plus simple est de passer le paquet en public depuis ses *Package settings*.
+
 ## Prochaines étapes
 
-- Section 4.6 : `ci.yml` (ruff + pytest + publication GHCR), à mettre en place tôt.
+- Passer le paquet GHCR en public (bloque le déploiement Container Apps).
+- Section 4.6 : `deploy.yml` (OIDC vers Azure, mise à jour de Container Apps).
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.

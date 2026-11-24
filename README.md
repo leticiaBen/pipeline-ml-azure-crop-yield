@@ -256,12 +256,15 @@ Tableau de bord (encore vide) : `https://stcropyieldpipe.z28.web.core.windows.ne
 Construite en local depuis [`api/Dockerfile`](api/Dockerfile), multi-étapes, `python:3.12-slim`,
 utilisateur non root `apiuser` (uid 10001), `HEALTHCHECK` sans `curl`.
 
-| Mesure | Valeur |
-|---|---|
-| Système de fichiers du conteneur | **387 Mo** |
-| Somme des couches | **411 Mo** |
-| Poussée au registre (compressée) | **112 Mo** |
-| Limite de l'énoncé | 500 Mo |
+| Mesure | Local (Mac, arm64) | Runner CI (Ubuntu, amd64) |
+|---|---|---|
+| Système de fichiers du conteneur | **387 Mo** | **348 Mo** |
+| Somme des couches | 411 Mo | — |
+| Poussée au registre (compressée) | 112 Mo | 113 Mo |
+| Limite de l'énoncé | 500 Mo | 500 Mo |
+
+L'écart entre 387 et 348 Mo vient de l'architecture : les roues scientifiques compilées pour
+arm64 sont plus volumineuses que celles pour amd64. Les deux passent largement.
 
 > `docker images` affiche **522 Mo** pour cette image, ce qui semble dépasser la limite. C'est un
 > artefact du magasin containerd de Docker Desktop, qui additionne les couches décompressées et
@@ -297,6 +300,50 @@ séjourne dans GitHub. Le dépôt n'a **aucun secret à l'échelle du dépôt** 
 d'environnement font que seul un job déclarant `environment: production` peut les lire, ce qui
 double la porte d'approbation d'une porte de visibilité. `ci.yml` n'y a pas accès, et n'en a pas
 besoin.
+
+### Intégration continue
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — déclenché sur push vers `main` et sur
+pull request. Entièrement sur les runners GitHub : **aucune ressource Azure n'est touchée**, donc
+aucun coût et aucun quota en jeu.
+
+| Job | Étapes |
+|---|---|
+| `qualite` | `ruff check .` sur `api/` et `model/`, puis `pytest` (12 tests) |
+| `image` | construction, trois contrôles, puis publication sur GHCR |
+
+L'image est construite avec `load` et non `push` : elle reste locale au runner le temps des
+contrôles et **n'est publiée qu'une fois validée**.
+
+**Trois garde-fous automatisés**, pour que les exigences de l'énoncé soient vérifiées par la
+machine et non par la mémoire :
+
+| Contrôle | Seuil | Relevé par la CI |
+|---|---|---|
+| Taille du système de fichiers de l'image | < 500 Mo | 348 Mo |
+| Utilisateur du conteneur | non root | `uid=10001` |
+| Test de fumée : `/health` | 200 | 200 |
+| Test de fumée : `/predict` | 200 | `410147.94` hg/ha en 51,65 ms |
+| Test de fumée : pluviométrie négative | 422 | 422 |
+
+Les étiquettes suivent l'énoncé — version **et** SHA du commit :
+
+```
+ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api:1.0.0
+ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api:<sha>
+```
+
+Le nom est forcé en minuscules, GHCR refusant `leticiaBen` tel quel. Aucun secret n'est
+nécessaire : le `GITHUB_TOKEN` fourni par la plateforme suffit, et la publication est
+conditionnée à un push sur `main` — une pull request venant d'un fork n'a pas le droit d'écrire
+dans le registre, et n'en a pas besoin.
+
+> **À faire avant le déploiement** : le paquet GHCR est **privé** par défaut, ce qui a été
+> vérifié par une requête anonyme au registre (HTTP 404). Container Apps ne pourra pas le tirer
+> en l'état. Il faut le passer en public — page du dépôt → *Packages* → le paquet →
+> *Package settings* → *Change visibility* → *Public*. Sinon, il faudra ajouter
+> `--registry-server ghcr.io` et un jeton GitHub en lecture seule stocké comme secret
+> Container Apps, comme le prévoit la section 6 de l'énoncé.
 
 **Reste à faire, et dans cet ordre imposé :** l'abonnement Event Grid ne peut être créé qu'après
 le premier déploiement du code Functions. Les attributions de rôles de la Function App
