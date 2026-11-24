@@ -6,6 +6,7 @@ Entraînement et évaluation du modèle de prédiction du rendement agricole (se
 |---|---|
 | `train.py` | Téléchargement du jeu de données, découpage temporel, entraînement, évaluation, export |
 | `make_samples.py` | Génération des lots CSV de démonstration (valides, invalides, empoisonnés) |
+| `compare_cible.py` | Expérience justifiant la cible en logarithme (section 3 du README) |
 | `requirements.txt` | Dépendances figées (`pip freeze`) |
 | `model-1.0.0.joblib` | Modèle versionné — **livrable L1** |
 | `metrics.json` | RMSE, MAE, R² du modèle et de la référence naïve |

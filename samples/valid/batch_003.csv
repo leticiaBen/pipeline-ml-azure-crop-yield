@@ -1,0 +1,26 @@
+Area,Item,Year,average_rain_fall_mm_per_year,pesticides_tonnes,avg_temp,hg/ha_yield
+Bulgaria,Maize,2012,608.0,1331.0,9.99,36800
+Bulgaria,Potatoes,2012,608.0,1331.0,9.99,101515
+Bulgaria,"Rice, paddy",2012,608.0,1331.0,9.99,55605
+Bulgaria,Sorghum,2012,608.0,1331.0,9.99,20205
+Bulgaria,Soybeans,2012,608.0,1331.0,9.99,7903
+Bulgaria,Wheat,2012,608.0,1331.0,9.99,37596
+Bulgaria,Maize,2013,608.0,1197.0,11.26,63943
+Bulgaria,Potatoes,2013,608.0,1197.0,11.26,146125
+Bulgaria,"Rice, paddy",2013,608.0,1197.0,11.26,54945
+Bulgaria,Sorghum,2013,608.0,1197.0,11.26,26792
+Bulgaria,Soybeans,2013,608.0,1197.0,11.26,17976
+Bulgaria,Wheat,2013,608.0,1197.0,11.26,41885
+Burkina Faso,Cassava,2010,748.0,442.89,29.17,15659
+Burkina Faso,Maize,2010,748.0,442.89,29.17,14342
+Burkina Faso,Potatoes,2010,748.0,442.89,29.17,18998
+Burkina Faso,"Rice, paddy",2010,748.0,442.89,29.17,20238
+Burkina Faso,Sorghum,2010,748.0,442.89,29.17,10036
+Burkina Faso,Soybeans,2010,748.0,442.89,29.17,12562
+Burkina Faso,Sweet potatoes,2010,748.0,442.89,29.17,102743
+Burkina Faso,Yams,2010,748.0,442.89,29.17,66518
+Burkina Faso,Cassava,2011,748.0,843.0,29.03,13548
+Burkina Faso,Maize,2011,748.0,843.0,29.03,15356
+Burkina Faso,Potatoes,2011,748.0,843.0,29.03,19159
+Burkina Faso,"Rice, paddy",2011,748.0,843.0,29.03,17676
+Burkina Faso,Sorghum,2011,748.0,843.0,29.03,8952

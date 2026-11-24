@@ -1,0 +1,26 @@
+Area,Item,Year,average_rain_fall_mm_per_year,pesticides_tonnes,avg_temp,hg/ha_yield
+Nepal,Soybeans,2012,1500.0,410.32,15.2,9654
+Nepal,Wheat,2012,1500.0,410.32,15.2,24123
+Nepal,Maize,2013,1500.0,454.53,15.79,23528
+Nepal,Potatoes,2013,1500.0,454.53,15.79,136408
+Nepal,"Rice, paddy",2013,1500.0,454.53,15.79,31709
+Nepal,Soybeans,2013,1500.0,454.53,15.79,11719
+Nepal,Wheat,2013,1500.0,454.53,15.79,22902
+Netherlands,Maize,2010,778.0,9586.03,8.84,117673
+Netherlands,Potatoes,2010,778.0,9586.03,8.84,435980
+Netherlands,Wheat,2010,778.0,9586.03,8.84,89092
+Netherlands,Maize,2011,778.0,10953.91,10.73,123355
+Netherlands,Potatoes,2011,778.0,10953.91,10.73,460550
+Netherlands,Wheat,2011,778.0,10953.91,10.73,77812
+Netherlands,Maize,2012,778.0,11348.39,10.08,123420
+Netherlands,Potatoes,2012,778.0,11348.39,10.08,451734
+Netherlands,Wheat,2012,778.0,11348.39,10.08,85870
+Netherlands,Maize,2013,778.0,10720.17,9.54,119446
+Netherlands,Potatoes,2013,778.0,10720.17,9.54,422075
+Netherlands,Wheat,2013,778.0,10720.17,9.54,87412
+New Zealand,Maize,2010,1732.0,5086.0,13.54,107597
+New Zealand,Potatoes,2010,1732.0,5086.0,13.54,495751
+New Zealand,Sweet potatoes,2010,1732.0,5086.0,13.54,117803
+New Zealand,Wheat,2010,1732.0,5086.0,13.54,81241
+New Zealand,Maize,2011,1732.0,5086.0,13.46,113842
+New Zealand,Potatoes,2011,1732.0,5086.0,13.46,490361

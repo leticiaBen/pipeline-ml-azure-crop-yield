@@ -1,0 +1,26 @@
+Area,Item,Year,average_rain_fall_mm_per_year,pesticides_tonnes,avg_temp,hg/ha_yield
+Albania,Maize,2010,1485.0,1311.17,16.52,66790
+Albania,Potatoes,2010,1485.0,1311.17,16.52,231111
+Albania,Soybeans,2010,1485.0,1311.17,16.52,16667
+Albania,Wheat,2010,1485.0,1311.17,16.52,39905
+Albania,Maize,2011,1485.0,1302.63,16.45,59869
+Albania,Potatoes,2011,1485.0,1302.63,16.45,242211
+Albania,Soybeans,2011,1485.0,1302.63,16.45,18519
+Albania,Wheat,2011,1485.0,1302.63,16.45,42301
+Albania,Maize,2012,1485.0,766.25,16.7,67290
+Albania,Potatoes,2012,1485.0,766.25,16.7,250538
+Albania,Soybeans,2012,1485.0,766.25,16.7,13333
+Albania,Wheat,2012,1485.0,766.25,16.7,41096
+Albania,Maize,2013,1485.0,982.32,17.41,69533
+Albania,Potatoes,2013,1485.0,982.32,17.41,260110
+Albania,Soybeans,2013,1485.0,982.32,17.41,10000
+Albania,Wheat,2013,1485.0,982.32,17.41,41292
+Algeria,Maize,2010,89.0,1295.88,17.59,25827
+Algeria,Potatoes,2010,89.0,1295.88,17.59,270526
+Algeria,"Rice, paddy",2010,89.0,1295.88,17.59,15305
+Algeria,Sorghum,2010,89.0,1295.88,17.59,30286
+Algeria,Wheat,2010,89.0,1295.88,17.59,14838
+Algeria,Maize,2011,89.0,13861.76,17.79,23374
+Algeria,Potatoes,2011,89.0,13861.76,17.79,292806
+Algeria,"Rice, paddy",2011,89.0,13861.76,17.79,16081
+Algeria,Sorghum,2011,89.0,13861.76,17.79,100000

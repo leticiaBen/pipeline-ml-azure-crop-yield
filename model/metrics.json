@@ -1,0 +1,35 @@
+{
+  "model_version": "1.0.0",
+  "dataset": "patelris/crop-yield-prediction-dataset/versions/7",
+  "split": {
+    "train": "1990-2009",
+    "test": "2010-2013",
+    "n_train": 21305,
+    "n_test": 4627
+  },
+  "seed": 42,
+  "model": {
+    "rmse": 23117.615895971772,
+    "mae": 12246.29090064928,
+    "r2": 0.9410933885698765
+  },
+  "baseline": {
+    "rmse": 61468.289634191286,
+    "mae": 36356.56947700124,
+    "r2": 0.5835333670587712
+  },
+  "contraintes": {
+    "taille_mo": 0.531,
+    "taille_limite_mo": 100,
+    "inference_froide_ms": 28.2,
+    "inference_mediane_ms": 9.35,
+    "inference_limite_ms": 1000,
+    "chargement_modele_ms": 11.11
+  },
+  "versions": {
+    "python": "3.12.7",
+    "scikit_learn": "1.9.1",
+    "pandas": "3.1.1",
+    "joblib": "1.6.0"
+  }
+}

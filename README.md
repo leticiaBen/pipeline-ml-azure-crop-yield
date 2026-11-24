@@ -101,35 +101,131 @@ refus de capacité.
 
 ## 3. Jeu de données et modèle
 
-**Crop Yield Prediction Dataset** — Kaggle, auteur `patelris`, à partir de données **FAO** et
-**Banque mondiale**. Environ 28 000 lignes, une centaine de pays, 10 cultures, années 1990 à 2013.
-Taille ≈ 2 Mo (limite de l'énoncé : 50 Mo).
+**Crop Yield Prediction Dataset** — [Kaggle, auteur `patelris`](https://www.kaggle.com/datasets/patelris/crop-yield-prediction-dataset),
+**version 7 épinglée** dans le script d'entraînement. Construit à partir de données **FAO**
+(production et rendements) et **Banque mondiale** (climat).
 
-- **Licence** : *à recopier depuis la page Kaggle du jeu de données*
-- **Sources d'origine** : FAO (production et rendements), Banque mondiale (climat)
+- **Licence** : [World Bank Dataset Terms of Use](https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets)
+- **Volume** : 1,5 Mo pour `yield_df.csv`, très loin de la limite de 50 Mo de l'énoncé
+- **Étendue** : 101 pays, 10 cultures, années 1990 à 2013
+- **Lignes** : 28 242 brutes, **25 932** après déduplication
+
+> La fusion des températures effectuée en amont par l'auteur a dupliqué **2 310 lignes**. Sans
+> `drop_duplicates()`, ces doublons se répartiraient entre entraînement et test : le modèle serait
+> évalué sur des lignes qu'il a déjà vues, et les scores seraient surévalués.
 
 **Tâche** — régression : prédire `hg/ha_yield`, le rendement en hectogrammes par hectare
 (diviser par 10 pour des kg/ha), à partir du pays, de la culture, de l'année, de la pluviométrie
 annuelle, des pesticides utilisés et de la température moyenne.
 
-**Protocole d'évaluation** — découpage **temporel** et non aléatoire : entraînement sur 1990–2009,
-test sur 2010–2013. Un découpage aléatoire laisserait le modèle « voir le futur » et gonflerait
-artificiellement les scores. Cible entraînée en logarithme, les rendements variant d'un facteur 10
-entre cultures (pomme de terre contre blé).
+**Protocole d'évaluation** — découpage **temporel** et non aléatoire : entraînement sur
+21 305 lignes de 1990 à 2009, évaluation sur 4 627 lignes de 2010 à 2013, jamais vues.
+Un découpage aléatoire mélangerait les années et laisserait le modèle « voir le futur » : les
+scores seraient meilleurs, mais mensongers.
+
+Cible entraînée en **logarithme**, les rendements moyens allant de 16 992 hg/ha pour le soja à
+198 666 pour la pomme de terre, soit un facteur 12. Sans cette transformation, l'erreur
+quadratique se concentrerait sur les cultures à fort rendement et le modèle négligerait les autres.
 
 ### Modèle — version 1.0.0
 
-`HistGradientBoostingRegressor` (scikit-learn), graine fixée à 42.
+`HistGradientBoostingRegressor` (scikit-learn), graine fixée à 42. Choisi plutôt qu'une forêt
+aléatoire, qui dépasserait sur ces données les 100 Mo interdits par l'énoncé.
 
 | | RMSE | MAE | R² |
 |---|---|---|---|
-| Référence naïve (rendement moyen par culture) | *à compléter* | *à compléter* | *à compléter* |
-| Modèle 1.0.0 | *à compléter* | *à compléter* | *à compléter* |
+| Référence naïve (rendement moyen par culture) | 61 468 | 36 357 | 0.5835 |
+| **Modèle 1.0.0** | **23 118** | **12 246** | **0.9411** |
+| *Gain* | *−62.4 %* | *−66.3 %* | |
 
-| Contrainte de l'énoncé | Mesuré |
-|---|---|
-| Taille < 100 Mo | *à compléter* |
-| Inférence < 1 s sur CPU | *à compléter* |
+Unités en hg/ha. Le modèle réduit l'erreur absolue moyenne de **66 %** par rapport à la
+référence naïve, et explique 94.1 % de la variance contre 58.4 % pour celle-ci.
+
+### Contraintes de l'énoncé
+
+| Contrainte | Seuil | Mesuré | |
+|---|---|---|---|
+| Taille du modèle | < 100 Mo | **0.531 Mo** | OK |
+| Inférence sur CPU | < 1 s | **28.2 ms** à froid, 9.35 ms en médiane | OK |
+| Chargement du modèle | — | 11.11 ms | |
+
+Chiffres produits par [`model/train.py`](model/train.py) et enregistrés dans
+[`model/metrics.json`](model/metrics.json), avec les versions exactes des bibliothèques utilisées.
+
+**Reproductibilité vérifiée** : deux exécutions successives produisent un `model-1.0.0.joblib` de
+même empreinte MD5 et des métriques identiques. Le temps d'inférence, lui, varie avec la charge de
+la machine — il reste deux ordres de grandeur sous la limite.
+
+Un cas limite réel à signaler : **le Soudan figure dans le jeu de test sans apparaître dans
+l'entraînement**. L'encodeur ordinal le traduit en `NaN`, que HistGradientBoosting traite
+nativement comme une valeur manquante, sans lever d'exception.
+
+### Pourquoi la cible en logarithme
+
+Décision arbitrée, pas recopiée : les deux variantes ont été entraînées et comparées
+(`model/compare_cible.py`, reproductible).
+
+Le modèle minimise une erreur quadratique exprimée en hg/ha. Or une erreur de 10 % vaut
+22 707 hg/ha sur la pomme de terre contre 1 826 sur le soja : au carré, la première coûte
+155 fois plus cher. Sans transformation, le modèle a donc intérêt à soigner les cultures à fort
+rendement et à négliger les autres. Le logarithme ramène tout à des écarts relatifs, où 10 %
+d'erreur pèse pareil quelle que soit la culture.
+
+**Erreur globale — la cible brute est meilleure :**
+
+| | RMSE | MAE |
+|---|---|---|
+| Sans logarithme | **20 102** | **11 534** |
+| Avec logarithme | 23 118 | 12 246 |
+
+**Erreur relative par culture (MAPE) — le logarithme est meilleur sur 8 cultures sur 10 :**
+
+| Culture | Rendement moyen | Sans log | Avec log | Écart |
+|---|---|---|---|---|
+| Soja | 18 257 | 24,0 % | **16,4 %** | −7,6 |
+| Sorgho | 22 424 | 39,3 % | **24,4 %** | **−14,9** |
+| Blé | 33 926 | 19,3 % | **14,7 %** | −4,6 |
+| Maïs | 46 673 | 28,0 % | **18,4 %** | −9,5 |
+| Riz | 47 925 | 19,2 % | **14,3 %** | −4,9 |
+| Plantains | 107 470 | 18,2 % | **14,6 %** | −3,5 |
+| Ignames | 120 803 | **22,0 %** | 23,3 % | +1,3 |
+| Patates douces | 136 090 | 17,6 % | **15,3 %** | −2,4 |
+| Manioc | 177 341 | **20,6 %** | 20,2 % | −0,4 |
+| Pomme de terre | 227 066 | **12,4 %** | 13,0 % | +0,6 |
+
+**Décision : garder le logarithme.** L'erreur globale en hg/ha est dominée par les cultures à
+fort rendement : elle récompense le modèle qui ne s'occupe que d'elles. Le sorgho passe de 39 %
+à 24 % d'erreur relative, tandis que les deux cultures qui se dégradent — ignames et pomme de
+terre, parmi les trois plus hauts rendements — perdent moins d'un point. Un modèle exploitable
+sur les dix cultures vaut mieux qu'un spécialiste de la pomme de terre à la note globale
+flatteuse.
+
+À noter : les deux variantes écrasent largement la référence naïve (RMSE 61 468), donc
+l'exigence de la section 4.1 est satisfaite dans les deux cas.
+
+### Reproduire l'entraînement
+
+```bash
+cd model
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python train.py
+```
+
+### Fichiers de simulation
+
+[`model/make_samples.py`](model/make_samples.py) produit, depuis le jeu de test, les fichiers à
+déposer dans `input/` pour la démonstration :
+
+| Dossier | Contenu | Chemin exercé |
+|---|---|---|
+| `samples/valid/` | 12 lots de 25 lignes, prélevés à intervalle régulier pour couvrir plusieurs pays et cultures | `output/` + Cosmos DB |
+| `samples/invalid/` | colonne manquante, mauvaise extension, fichier vide | `rejected/` |
+| `samples/poison/` | pluviométrie à −500 mm | 422 de l'API, 5 tentatives, file `-poison` |
+
+Le rendement réel est conservé dans les lots valides : l'API l'ignore, mais le worker peut le
+stocker, ce qui permet au tableau de bord de tracer la courbe « prédit contre réel » de la
+section 4.4. `--lots 100` génère de quoi alimenter le test de charge en bonus.
 
 ## 4. Déploiement pas à pas
 

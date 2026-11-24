@@ -1,0 +1,26 @@
+Area,Item,Year,average_rain_fall_mm_per_year,pesticides_tonnes,avg_temp,hg/ha_yield
+Mauritania,Wheat,2011,92.0,13.35,27.87,16018
+Mauritania,Yams,2011,92.0,13.35,27.87,62703
+Mauritania,Maize,2012,92.0,26.41,27.77,6904
+Mauritania,Potatoes,2012,92.0,26.41,27.77,57143
+Mauritania,"Rice, paddy",2012,92.0,26.41,27.77,49788
+Mauritania,Sorghum,2012,92.0,26.41,27.77,5074
+Mauritania,Sweet potatoes,2012,92.0,26.41,27.77,10000
+Mauritania,Wheat,2012,92.0,26.41,27.77,21278
+Mauritania,Yams,2012,92.0,26.41,27.77,63830
+Mauritania,Maize,2013,92.0,26.41,28.24,4731
+Mauritania,Potatoes,2013,92.0,26.41,28.24,62857
+Mauritania,"Rice, paddy",2013,92.0,26.41,28.24,49522
+Mauritania,Sorghum,2013,92.0,26.41,28.24,4843
+Mauritania,Sweet potatoes,2013,92.0,26.41,28.24,10000
+Mauritania,Wheat,2013,92.0,26.41,28.24,21172
+Mauritania,Yams,2013,92.0,26.41,28.24,61224
+Mauritius,Cassava,2010,2041.0,731.46,24.67,132059
+Mauritius,Maize,2010,2041.0,731.46,24.67,68333
+Mauritius,Potatoes,2010,2041.0,731.46,24.67,203649
+Mauritius,"Rice, paddy",2010,2041.0,731.46,24.67,28354
+Mauritius,Sweet potatoes,2010,2041.0,731.46,24.67,114143
+Mauritius,Cassava,2011,2041.0,685.98,24.52,125000
+Mauritius,Maize,2011,2041.0,685.98,24.52,74419
+Mauritius,Potatoes,2011,2041.0,685.98,24.52,213264
+Mauritius,"Rice, paddy",2011,2041.0,685.98,24.52,26333

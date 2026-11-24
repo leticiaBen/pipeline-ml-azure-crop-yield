@@ -9,13 +9,15 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Déploiement du socle Azure : groupe étiqueté, Cosmos DB Free Tier, stockage et conteneurs, Log Analytics plafonné, Application Insights, environnement Container Apps, identité managée OIDC, budget 25 $ | 0h45 | Environnement Container Apps : 8 min de provisionnement. Sujet fédéré corrompu par zsh (voir décisions) |
 | 24/11/2026 | leticiaBen | Attribution du rôle Contributor à l'identité GitHub, limité au groupe de ressources ; vérification du moindre privilège | 0h10 | — |
 | 24/11/2026 | leticiaBen | Enregistrement des 3 identifiants Azure comme secrets d'environnement `production` ; scan de sécurité de l'arbre de travail | 0h10 | — |
+| 24/11/2026 | leticiaBen | Section 4.1 : environnement Python 3.12, `train.py`, entraînement, évaluation contre la référence naïve, export du modèle 1.0.0, `requirements.txt` figé, lots de simulation | 1h15 | `metrics.json` annonçait Python 3.13.7 au lieu de 3.12.7 : `os.popen("python3 --version")` interrogeait le Python du système et non celui de l'environnement virtuel |
+| 24/11/2026 | leticiaBen | Comparaison chiffrée cible brute contre cible en logarithme, par culture ; décision et documentation | 0h20 | — |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 3h20 |
+| leticiaBen | 4h55 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -88,9 +90,48 @@ n'y a aucun accès. Le dépôt ne porte aucun secret global. Scan de l'arbre de 
 (chaînes de connexion, clés de compte de stockage, SAS, clés privées, adresses e-mail) : aucune
 correspondance, ce qui écarte la pénalité de −2 points.
 
+**24/11/2026 — Modèle 1.0.0 entraîné, section 4.1 terminée.** HistGradientBoostingRegressor,
+cible en logarithme, découpage temporel 1990-2009 / 2010-2013, graine 42.
+RMSE 23 118 contre 61 468 pour la référence naïve, MAE 12 246 contre 36 357,
+R² 0.9411 contre 0.5835 — soit 66 % d'erreur absolue en moins. Les deux
+contraintes de l'énoncé sont tenues avec de larges marges : 0.531 Mo pour une limite de
+100 Mo, et 28.2 ms d'inférence à froid pour une limite de 1 s.
+
+**24/11/2026 — Version du jeu de données épinglée.** `train.py` demande
+`patelris/crop-yield-prediction-dataset/versions/7` et non la dernière version. Avec « latest »,
+une republication par l'auteur ferait varier les métriques du README sans qu'aucune ligne de code
+n'ait changé. L'énoncé exige un script reproductible.
+
+**24/11/2026 — Reproductibilité vérifiée, pas supposée.** Deux exécutions successives produisent
+un `model-1.0.0.joblib` de même empreinte MD5 et des métriques identiques. Le temps d'inférence,
+lui, varie d'une exécution à l'autre selon la charge de la machine (28.2 ms relevés après
+une première mesure à 5,73 ms) : les deux restent deux ordres de grandeur sous la limite.
+
+**24/11/2026 — Deux fragilités attendues qui ne se déclenchent pas sur ces données.** Vérification
+faite : dans `yield_df.csv` la pluviométrie est déjà numérique (contrairement au `rainfall.csv`
+source), et les 10 cultures du jeu de test sont toutes présentes dans l'entraînement. Les deux
+garde-fous ont été conservés — conversion numérique explicite et repli de la référence naïve sur
+la moyenne globale — car ils ne coûtent rien et protègent d'une évolution du jeu de données. En
+revanche un cas réel existe : **le Soudan apparaît dans le test sans être dans l'entraînement**.
+L'encodeur le traduit en NaN, que HistGradientBoosting traite nativement comme une valeur
+manquante.
+
+**24/11/2026 — Licence du jeu de données.** World Bank Dataset Terms of Use, relevée sur la fiche
+Kaggle. Citée dans le README avec les sources d'origine FAO et Banque mondiale, comme l'exige la
+section 4.1.
+
+**24/11/2026 — Cible en logarithme : décision arbitrée, pas supposée.** Les deux variantes ont
+été entraînées et comparées (`model/compare_cible.py`). Résultat contre-intuitif : **la cible
+brute donne une meilleure erreur globale** (RMSE 20 102 contre 23 118). Mais l'erreur globale en
+hg/ha est dominée par les cultures à fort rendement. En erreur relative par culture, le
+logarithme gagne sur 8 cultures sur 10 — le sorgho passe de 39,3 % à 24,4 % — et les deux qui se
+dégradent, ignames et pomme de terre, perdent moins d'un point. Décision : garder le logarithme,
+un modèle exploitable sur les dix cultures valant mieux qu'un spécialiste des gros rendements.
+Les deux variantes écrasent de toute façon la référence naïve, donc la section 4.1 est
+satisfaite dans les deux cas. Tableau complet dans la section 3 du README.
+
 ## Prochaines étapes
 
-- Section 4.1 : `model/train.py`, métriques contre la référence naïve, export `model-1.0.0.joblib`.
 - Section 4.2 : API FastAPI, tests pytest, Dockerfile multi-étapes.
 - Section 4.6 : `ci.yml` (ruff + pytest + publication GHCR), à mettre en place tôt.
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.
