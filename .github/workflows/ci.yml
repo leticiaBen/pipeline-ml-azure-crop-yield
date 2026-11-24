@@ -26,9 +26,9 @@ jobs:
     name: Lint et tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -56,9 +56,9 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Nom de l'image
         id: nom
@@ -68,7 +68,7 @@ jobs:
 
       - name: Connexion à GHCR
         if: github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -76,7 +76,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Construction
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: api/Dockerfile
@@ -93,14 +93,31 @@ jobs:
         # L'énoncé impose une image sous 500 Mo. Le contrôle est automatisé :
         # une dépendance lourde ajoutée par mégarde fera échouer la CI au lieu
         # d'être découverte à la soutenance.
+        #
+        # Attention au chiffre que l'on mesure. « docker image inspect .Size »
+        # renvoie la taille du contenu COMPRESSÉ (≈113 Mo ici) : un contrôle
+        # fondé sur elle laisserait passer une image de 600 Mo décompressée.
+        # On mesure donc le système de fichiers réel du conteneur, qui est la
+        # grandeur exigeante, et on journalise les deux.
         env:
           IMG: ${{ steps.nom.outputs.image }}
         run: |
-          octets=$(docker image inspect "$IMG:$IMAGE_VERSION" --format '{{.Size}}')
-          mo=$((octets / 1000000))
-          echo "Taille de l'image : ${mo} Mo (limite : ${TAILLE_MAX_MO} Mo)"
-          if [ "$mo" -ge "$TAILLE_MAX_MO" ]; then
-            echo "::error::L'image dépasse la limite de ${TAILLE_MAX_MO} Mo"
+          compresse=$(( $(docker image inspect "$IMG:$IMAGE_VERSION" --format '{{.Size}}') / 1000000 ))
+          reel=$(docker run --rm --entrypoint sh "$IMG:$IMAGE_VERSION" \
+                   -c "du -sm --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | cut -f1")
+          echo "Système de fichiers du conteneur : ${reel} Mo"
+          echo "Contenu compressé, poussé au registre : ${compresse} Mo"
+          echo "Limite de l'énoncé : ${TAILLE_MAX_MO} Mo"
+          {
+            echo "### Taille de l'image"
+            echo "| Mesure | Valeur |"
+            echo "|---|---|"
+            echo "| Système de fichiers du conteneur | ${reel} Mo |"
+            echo "| Compressée (registre) | ${compresse} Mo |"
+            echo "| Limite de l'énoncé | ${TAILLE_MAX_MO} Mo |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$reel" -ge "$TAILLE_MAX_MO" ]; then
+            echo "::error::Le système de fichiers de l'image fait ${reel} Mo, limite ${TAILLE_MAX_MO} Mo"
             exit 1
           fi
 
