@@ -16,13 +16,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Section 4.6 : `ci.yml` (lint, tests, image GHCR), trois garde-fous automatisés, config ruff centralisée | 0h50 | Mesure de taille initialement fondée sur le mauvais chiffre ; versions d'actions obsolètes |
 | 24/11/2026 | leticiaBen | Réattribution des 4 commits au compte GitHub | 0h15 | Aucune identité Git sur la machine : les 3 premiers commits n'étaient rattachés à aucun compte |
 | 24/11/2026 | leticiaBen | Labels OCI sur l'image et contrôle en CI | 0h20 | Le Dockerfile n'avait aucun LABEL : le paquet GHCR n'était relié à aucun dépôt |
+| 24/11/2026 | leticiaBen | Passage du paquet GHCR en public et vérification de l'accès anonyme au registre | 0h10 | La visibilité d'un paquet GHCR n'est modifiable que dans l'interface web |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 9h10 |
+| leticiaBen | 9h20 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -213,8 +214,19 @@ ne l'aurait trouvé qu'en fouillant le profil. Labels OCI ajoutés, dont `revisi
 placé après les `COPY` : il change à chaque commit et invaliderait sinon le cache de la couche
 lourde du venv. Une étape de CI vérifie désormais les deux labels.
 
+**24/11/2026 — Paquet GHCR public, déploiement débloqué.** Vérifié par une requête anonyme au
+registre plutôt que dans l'interface, puisque c'est ce que fera Container Apps : manifeste en
+HTTP 200, 6 étiquettes listables, 114 Mo distribués sur 10 couches, utilisateur `apiuser`. Les
+cinq labels OCI sont présents sur l'image publiée, `revision` portant bien le SHA du commit.
+Container Apps pourra donc tirer l'image sans identifiant, ce qui évite le secret de registre
+qu'imposerait un paquet privé.
+
+**24/11/2026 — À savoir : la visibilité d'un paquet GHCR n'est pas modifiable par API.** Ni
+endpoint REST, ni commande `gh`. Chercher une automatisation est une perte de temps : c'est une
+opération d'interface web, *Package settings* → *Danger Zone* → *Change visibility*, avec
+confirmation par la frappe du nom du paquet.
+
 ## Prochaines étapes
 
-- Passer le paquet GHCR en public (bloque le déploiement Container Apps).
 - Section 4.6 : `deploy.yml` (OIDC vers Azure, mise à jour de Container Apps).
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.

@@ -348,12 +348,36 @@ nécessaire : le `GITHUB_TOKEN` fourni par la plateforme suffit, et la publicati
 conditionnée à un push sur `main` — une pull request venant d'un fork n'a pas le droit d'écrire
 dans le registre, et n'en a pas besoin.
 
-> **À faire avant le déploiement** : le paquet GHCR est **privé** par défaut, ce qui a été
-> vérifié par une requête anonyme au registre (HTTP 404). Container Apps ne pourra pas le tirer
-> en l'état. Il faut le passer en public — page du dépôt → *Packages* → le paquet →
-> *Package settings* → *Change visibility* → *Public*. Sinon, il faudra ajouter
-> `--registry-server ghcr.io` et un jeton GitHub en lecture seule stocké comme secret
-> Container Apps, comme le prévoit la section 6 de l'énoncé.
+### Le paquet GHCR est public, et vérifié
+
+Container Apps pourra donc le tirer **sans aucun identifiant**, ce qui évite le secret de
+registre qu'aurait imposé un paquet privé (section 6 de l'énoncé).
+
+Vérifié non pas dans l'interface, mais par une requête **anonyme** au registre — exactement ce
+que fera Container Apps :
+
+| Vérification | Résultat |
+|---|---|
+| Manifeste de `:1.0.0` sans identifiants | HTTP 200 |
+| Manifeste par SHA de commit | HTTP 200 |
+| Étiquettes listables en anonyme | 6 |
+| Taille distribuée | 114 Mo, 10 couches |
+| Utilisateur déclaré dans l'image | `apiuser` |
+| Plateforme | `linux/amd64` |
+
+Les cinq labels OCI sont bien présents sur l'image publiée :
+
+```
+org.opencontainers.image.title       API de prediction du rendement agricole
+org.opencontainers.image.description Inference du rendement agricole en hg/ha ...
+org.opencontainers.image.source      https://github.com/leticiaBen/pipeline-ml-azure-crop-yield
+org.opencontainers.image.version     1.0.0
+org.opencontainers.image.revision    822dac531f81f845e97b86e043fac37a7fb70a09
+```
+
+> Note pratique : la visibilité d'un paquet GHCR **ne peut pas** être changée par l'API REST ni
+> par `gh` — aucun endpoint ne l'expose. C'est une opération d'interface web uniquement, à faire
+> depuis *Package settings* → *Danger Zone* → *Change visibility*.
 
 **Reste à faire, et dans cet ordre imposé :** l'abonnement Event Grid ne peut être créé qu'après
 le premier déploiement du code Functions. Les attributions de rôles de la Function App
