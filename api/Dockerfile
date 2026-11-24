@@ -68,6 +68,20 @@ COPY model/model-1.0.0.joblib /app/model/model-1.0.0.joblib
 RUN chown -R apiuser:apiuser /app
 USER apiuser
 
+# Labels OCI standards. Place ici, apres les COPY : un LABEL ne pese rien,
+# mais l'argument REVISION change a chaque commit et invaliderait le cache
+# de tout ce qui suit s'il etait declare plus haut.
+#
+# org.opencontainers.image.source est celui qui compte : c'est lui qui relie
+# le paquet au depot sur GHCR. Sans lui, l'image n'apparait pas dans l'onglet
+# Packages du depot et la page du paquet n'affiche aucun lien vers le code.
+ARG REVISION=inconnue
+LABEL org.opencontainers.image.title="API de prediction du rendement agricole" \
+      org.opencontainers.image.description="Inference du rendement agricole en hg/ha a partir du pays, de la culture, de la pluviometrie, des pesticides et de la temperature" \
+      org.opencontainers.image.source="https://github.com/leticiaBen/pipeline-ml-azure-crop-yield" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.revision="${REVISION}"
+
 EXPOSE 8000
 
 # HEALTHCHECK sans curl : l'image slim n'en contient pas, et l'installer pour

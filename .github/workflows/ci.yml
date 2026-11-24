@@ -86,6 +86,10 @@ jobs:
           tags: |
             ${{ steps.nom.outputs.image }}:${{ env.IMAGE_VERSION }}
             ${{ steps.nom.outputs.image }}:${{ github.sha }}
+          # Trace le commit exact dans les metadonnees de l'image, en plus de
+          # l'etiquette : une image recuperee du registre dit d'ou elle vient.
+          build-args: |
+            REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -129,6 +133,29 @@ jobs:
           echo "uid dans le conteneur : $uid"
           if [ "$uid" = "0" ]; then
             echo "::error::Le conteneur tourne en root"
+            exit 1
+          fi
+
+      - name: Contrôle des labels OCI
+        # Le label source est ce qui relie le paquet au depot sur GHCR.
+        # S'il disparaissait, le paquet redeviendrait orphelin sans que
+        # personne ne s'en apercoive.
+        env:
+          IMG: ${{ steps.nom.outputs.image }}
+        run: |
+          source=$(docker image inspect "$IMG:$IMAGE_VERSION" \
+                     --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')
+          revision=$(docker image inspect "$IMG:$IMAGE_VERSION" \
+                     --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          echo "source   : $source"
+          echo "revision : $revision"
+          attendu="https://github.com/${{ github.repository }}"
+          if [ "$source" != "$attendu" ]; then
+            echo "::error::label source absent ou incorrect (attendu $attendu)"
+            exit 1
+          fi
+          if [ "$revision" != "${{ github.sha }}" ]; then
+            echo "::error::label revision incorrect (attendu ${{ github.sha }})"
             exit 1
           fi
 
