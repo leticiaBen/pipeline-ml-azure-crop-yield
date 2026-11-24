@@ -1,0 +1,21 @@
+# Sans ce fichier, le contexte de construction embarquerait les
+# environnements virtuels et le jeu de donnees : plusieurs centaines de Mo
+# envoyes au demon Docker a chaque build.
+**/.venv/
+**/__pycache__/
+**/*.pyc
+model/data/
+model/test.csv
+samples/
+docs/
+web/
+functions/
+infra/
+.git/
+.github/
+*.md
+api/tests/
+api/.venv/
+api/requirements-dev.txt
+local.settings.json
+.env

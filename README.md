@@ -251,6 +251,36 @@ Script reproductible et commenté : [`infra/01-socle.sh`](infra/01-socle.sh).
 
 Tableau de bord (encore vide) : `https://stcropyieldpipe.z28.web.core.windows.net/`
 
+### Image de l'API
+
+Construite en local depuis [`api/Dockerfile`](api/Dockerfile), multi-étapes, `python:3.12-slim`,
+utilisateur non root `apiuser` (uid 10001), `HEALTHCHECK` sans `curl`.
+
+| Mesure | Valeur |
+|---|---|
+| Système de fichiers du conteneur | **387 Mo** |
+| Somme des couches | **411 Mo** |
+| Poussée au registre (compressée) | **112 Mo** |
+| Limite de l'énoncé | 500 Mo |
+
+> `docker images` affiche **522 Mo** pour cette image, ce qui semble dépasser la limite. C'est un
+> artefact du magasin containerd de Docker Desktop, qui additionne les couches décompressées et
+> les blobs compressés : 411 + 112 = 523. La taille réelle, mesurée par `du` à l'intérieur du
+> conteneur, est de 387 Mo.
+
+Une première version pesait 816 Mo. Trois réductions, par ordre de rendement :
+
+| Action | Gain |
+|---|---|
+| Suppression des suites de tests des bibliothèques scientifiques | ~100 Mo |
+| `strip --strip-unneeded` sur les bibliothèques natives (205 Mo de `.so`) | ~39 Mo |
+| `uvicorn` sans l'extra `[standard]` (uvloop, httptools, watchfiles, websockets…) | ~30 Mo |
+| `pip`, `setuptools`, `wheel` retirés de l'image finale | ~13 Mo |
+| `pip install --no-compile` et suppression des `__pycache__` | ~5 Mo |
+
+`binutils`, nécessaire à `strip`, reste dans l'étape de construction et ne pèse rien dans l'image
+finale : c'est précisément l'intérêt du multi-étapes.
+
 ### Secrets GitHub
 
 Trois identifiants, enregistrés **sur l'environnement `production`** et non à l'échelle du dépôt :
@@ -277,7 +307,64 @@ préparées dans [`infra/03-roles.sh`](infra/03-roles.sh).
 
 ## 5. Exemple d'appel
 
-<!-- À compléter : curl https://<api>/predict -d '{...}' et la réponse -->
+L'API n'est pas encore déployée ; les exemples ci-dessous viennent de l'image Docker exécutée en
+local, et seront repris tels quels avec l'URL publique une fois Container Apps en place.
+
+```bash
+curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" \
+  -d '{"Area":"France","Item":"Potatoes","Year":2012,
+       "average_rain_fall_mm_per_year":867,"pesticides_tonnes":72000,"avg_temp":11.2}'
+```
+
+```json
+{"predicted_yield_hg_ha": 410147.94, "model_version": "1.0.0", "inference_ms": 3.77}
+```
+
+Les quatre points de terminaison, relevés sur le conteneur :
+
+| Appel | Réponse |
+|---|---|
+| `GET /health` | `{"status":"ok","model_loaded":true,"model_load_ms":1511.79,"model_version":"1.0.0","error":null}` |
+| `GET /version` | `{"api_version":"1.0.0","model_version":"1.0.0"}` |
+| `GET /metrics` | `{"total_calls":9,"predictions":6,"errors":3,"avg_latency_ms":20.78,...}` |
+
+### Le rejet qui alimente la file poison
+
+```bash
+curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" \
+  -d '{"Area":"France","Item":"Potatoes","Year":2012,
+       "average_rain_fall_mm_per_year":-500,"pesticides_tonnes":72000,"avg_temp":11.2}'
+```
+
+```json
+{"detail":[{"type":"greater_than_equal",
+            "loc":["body","average_rain_fall_mm_per_year"],
+            "msg":"Input should be greater than or equal to 0",
+            "input":-500,"ctx":{"ge":0.0}}]}
+```
+
+**HTTP 422.** C'est ce code qui déclenchera les 5 tentatives du worker puis l'envoi dans
+`inference-requests-poison`. Les trois lignes de `samples/poison/pluie_negative.csv` ont été
+passées à l'API conteneurisée : les trois renvoient 422.
+
+### Prédit contre réel sur un vrai lot
+
+Six premières lignes de `samples/valid/batch_001.csv`, envoyées au conteneur :
+
+| Pays | Culture | Année | Réel | Prédit | Écart |
+|---|---|---|---|---|---|
+| Albania | Maize | 2010 | 66 790 | 58 645 | −12 % |
+| Albania | Potatoes | 2010 | 231 111 | 160 434 | −31 % |
+| Albania | Soybeans | 2010 | 16 667 | 19 003 | +14 % |
+| Albania | Wheat | 2010 | 39 905 | 34 653 | −13 % |
+| Albania | Maize | 2011 | 59 869 | 58 645 | −2 % |
+| Albania | Potatoes | 2011 | 242 211 | 160 434 | −34 % |
+
+La pomme de terre albanaise est nettement sous-estimée, et c'est instructif : son rendement a
+fortement progressé après 2009, or le modèle n'a appris que sur 1990-2009. C'est la limite
+assumée du découpage temporel — le modèle ne peut pas extrapoler une tendance qu'il n'a pas vue.
+Un découpage aléatoire masquerait ce défaut en lui donnant des années postérieures à apprendre.
+
 
 ## 6. Exemple d'événement Event Grid et de message de file
 

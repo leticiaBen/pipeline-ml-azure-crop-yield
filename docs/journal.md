@@ -11,13 +11,15 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Enregistrement des 3 identifiants Azure comme secrets d'environnement `production` ; scan de sécurité de l'arbre de travail | 0h10 | — |
 | 24/11/2026 | leticiaBen | Section 4.1 : environnement Python 3.12, `train.py`, entraînement, évaluation contre la référence naïve, export du modèle 1.0.0, `requirements.txt` figé, lots de simulation | 1h15 | `metrics.json` annonçait Python 3.13.7 au lieu de 3.12.7 : `os.popen("python3 --version")` interrogeait le Python du système et non celui de l'environnement virtuel |
 | 24/11/2026 | leticiaBen | Comparaison chiffrée cible brute contre cible en logarithme, par culture ; décision et documentation | 0h20 | — |
+| 24/11/2026 | leticiaBen | Section 4.2 : API FastAPI (4 endpoints, validation Pydantic), 12 tests pytest, configuration ruff | 1h30 | — |
+| 24/11/2026 | leticiaBen | Dockerfile multi-étapes, construction et réduction de l'image, tests du conteneur de bout en bout | 1h20 | Image initiale à 816 Mo contre une limite de 500 Mo ; `docker images` annonce une taille trompeuse |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 4h55 |
+| leticiaBen | 7h45 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -130,8 +132,38 @@ un modèle exploitable sur les dix cultures valant mieux qu'un spécialiste des 
 Les deux variantes écrasent de toute façon la référence naïve, donc la section 4.1 est
 satisfaite dans les deux cas. Tableau complet dans la section 3 du README.
 
+**24/11/2026 — Image Docker : 816 Mo au premier essai, pour une limite de 500 Mo.** Mesures
+avant d'agir : la couche du venv pesait 483 Mo, dont 205 Mo de bibliothèques natives, 100 Mo de
+suites de tests et 13 Mo de pip. Quatre réductions appliquées dans l'étape de construction —
+suppression des répertoires `tests`, `strip --strip-unneeded` sur les `.so`, `uvicorn` sans
+l'extra `[standard]`, retrait de pip/setuptools/wheel, `pip install --no-compile`. Résultat :
+387 Mo de système de fichiers, 411 Mo de couches, 112 Mo compressés.
+
+**24/11/2026 — `docker images` donne une taille trompeuse, à savoir pour la soutenance.** La
+commande affiche 522 Mo, ce qui ferait croire à un dépassement. Le magasin containerd de Docker
+Desktop additionne les couches décompressées et les blobs compressés : 411 + 112 = 523. Vérifié
+par une mesure indépendante, `du` à l'intérieur du conteneur, qui donne 387 Mo. Les trois chiffres
+sont documentés dans le README pour couper court à l'objection.
+
+**24/11/2026 — `/metrics` comptait mal les appels.** Première version : le compteur était
+incrémenté dans la fonction `predict`, donc un rejet 422 n'apparaissait jamais, Pydantic validant
+avant l'entrée dans la fonction. Or l'énoncé demande le nombre d'appels, et les 422 sont
+précisément le trafic qui révèle les fichiers empoisonnés. Corrigé par un middleware HTTP qui
+compte tous les appels à `/predict` et distingue les erreurs. Un test couvre le cas.
+
+**24/11/2026 — Le chargement du modèle prend 1,5 s en conteneur, pas 11 ms.** Les 11 ms mesurés
+par `train.py` correspondent à un processus déjà chaud et un fichier en cache. À froid dans le
+conteneur, c'est 1 511 ms. D'où `--start-period=20s` sur le `HEALTHCHECK`, et c'est la valeur à
+retenir pour la sonde readiness de Container Apps : une sonde trop impatiente redémarrerait le
+conteneur en boucle. L'inférence, elle, reste à 82 ms au premier appel et 3,8 ms ensuite, très
+loin de la limite d'une seconde.
+
+**24/11/2026 — Limite assumée du découpage temporel, visible sur un vrai lot.** La pomme de terre
+albanaise est sous-estimée de 31 à 34 % sur 2010 et 2011 : son rendement a fortement progressé
+après 2009, et le modèle n'a appris que jusqu'à cette année-là. Un découpage aléatoire masquerait
+ce défaut. C'est le prix de l'honnêteté de l'évaluation, et un bon sujet de question en soutenance.
+
 ## Prochaines étapes
 
-- Section 4.2 : API FastAPI, tests pytest, Dockerfile multi-étapes.
 - Section 4.6 : `ci.yml` (ruff + pytest + publication GHCR), à mettre en place tôt.
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.
