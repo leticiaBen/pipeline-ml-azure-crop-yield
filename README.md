@@ -386,6 +386,49 @@ attendent que celle-ci existe et devront être appliquées par la propriétaire 
 l'identité GitHub, simple Contributor, ne peut pas créer d'attributions de rôles. Commandes
 préparées dans [`infra/03-roles.sh`](infra/03-roles.sh).
 
+### Déploiement en production
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — déclenché **après** la CI
+(`workflow_run`) et non sur le push : l'image étiquetée avec le SHA doit exister sur GHCR avant
+que Container Apps ne la tire. Deux workflows sur le même push s'exécuteraient en parallèle et le
+déploiement perdrait la course.
+
+| Étape | Rôle |
+|---|---|
+| Commit à déployer | lit `workflow_run.head_sha`, **pas** `github.sha` |
+| L'image existe-t-elle sur GHCR ? | `docker manifest inspect`, échec clair avant d'appeler Azure |
+| Connexion à Azure | OIDC, identité managée, **aucun secret Azure** |
+| Mise à jour de Container Apps | `--image ...:<sha>` et `--set-env-vars GIT_SHA=<sha>` |
+| Vérification | `GET /version` doit renvoyer le SHA déployé |
+| Fumée en production | `/predict` à 200, pluviométrie négative à 422 |
+
+**Le job déclare `environment: production`**, ce qui remplit deux rôles d'un coup : la porte
+d'approbation à 5 relecteurs, et le contexte du sujet fédéré OIDC. Sans cette ligne,
+`azure/login` échoue.
+
+#### Trace du déploiement réussi
+
+| | |
+|---|---|
+| Commit | `4bfdebb0e288b5ac17070ecc6c8e3de5e8c1acdc` |
+| Approuvé par | @NourMontacer01 — **pas** l'autrice du commit |
+| Image déployée | `ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api:4bfdebb…` |
+| `GET /version` | `{"api_version":"1.0.0","model_version":"1.0.0","commit":"4bfdebb…"}` |
+| `POST /predict` | `410147.94` hg/ha en 9,32 ms |
+| Pluviométrie négative | 422 |
+
+Le champ `commit` de `/version` correspond exactement au SHA déployé : c'est le « Terminé quand »
+de la section 4.6, **vérifié automatiquement par le workflow lui-même**, qui échoue si l'API sert
+encore une version antérieure.
+
+#### Pourquoi déployer par SHA et non par étiquette
+
+Container Apps **ne retire pas** une image dont l'étiquette n'a pas changé. Un déploiement sur
+`:1.0.0` donnerait l'illusion d'avoir fonctionné sans rien changer — c'est ce qui s'est produit
+avant ce correctif : la révision active servait encore l'image figée à la création de
+l'application, sans le champ `commit` ajouté depuis. Chaque commit produit une étiquette neuve,
+donc une révision neuve et un vrai `pull`.
+
 ## 5. Exemple d'appel
 
 L'API n'est pas encore déployée ; les exemples ci-dessous viennent de l'image Docker exécutée en

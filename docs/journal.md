@@ -18,13 +18,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Labels OCI sur l'image et contrôle en CI | 0h20 | Le Dockerfile n'avait aucun LABEL : le paquet GHCR n'était relié à aucun dépôt |
 | 24/11/2026 | leticiaBen | Passage du paquet GHCR en public et vérification de l'accès anonyme au registre | 0h10 | La visibilité d'un paquet GHCR n'est modifiable que dans l'interface web |
 | 24/11/2026 | leticiaBen | Section 4.6 : `deploy.yml`, création de l'application Container Apps, `/version` expose le commit, plan de tournage | 1h40 | Deux échecs de déploiement : vérification d'image bricolée, puis sujet OIDC immuable |
+| 25/11/2026 | leticiaBen | Correction du sujet OIDC, déploiement réussi et vérifié de bout en bout | 0h30 | — |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 11h00 |
+| leticiaBen | 11h30 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -250,7 +251,19 @@ depuis. Container Apps ne retire pas une image dont l'étiquette n'a pas changé
 pour laquelle `deploy.yml` déploie par SHA : chaque commit produit une étiquette neuve, donc une
 nouvelle révision et un vrai `pull`.
 
+**25/11/2026 — Déploiement réussi, chaîne complète vérifiée.** Commit `4bfdebb`, approuvé par
+@NourMontacer01 — un membre autre que l'autrice, `prevent_self_review` faisant son travail. Les
+sept étapes du workflow en succès. `GET /version` renvoie exactement le SHA déployé, et c'est le
+workflow lui-même qui le vérifie : il échoue si l'API sert encore une version antérieure. La
+section 4.6 est remplie, et son « Terminé quand » est une assertion automatique, pas une
+affirmation.
+
+Il a fallu trois tentatives, chacune révélant un défaut réel : vérification d'image bricolée,
+puis sujet OIDC immuable, puis succès. Les deux premiers sont documentés dans le tableau des
+restrictions du README.
+
 ## Prochaines étapes
 
-- Section 4.6 : `deploy.yml` (OIDC vers Azure, mise à jour de Container Apps).
+- Section 4.3 : Function App unique, `function_app.py` (dispatcher, worker, recent).
+- Capture d'écran des réplicas revenus à 0 (section 4.2), après un temps sans trafic.
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.
