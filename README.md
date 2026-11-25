@@ -400,7 +400,19 @@ déploiement perdrait la course.
 | Connexion à Azure | OIDC, identité managée, **aucun secret Azure** |
 | Mise à jour de Container Apps | `--image ...:<sha>` et `--set-env-vars GIT_SHA=<sha>` |
 | Vérification | `GET /version` doit renvoyer le SHA déployé |
-| Fumée en production | `/predict` à 200, pluviométrie négative à 422 |
+| Construction du paquet des Functions | zip des 3 fichiers, ni tests ni `.venv` |
+| Déploiement de la Function App | `config-zip --build-remote`, dépendances installées côté Azure |
+| Vérification de l'indexation | les **trois** fonctions doivent apparaître, sinon échec |
+| Fumée des Functions | `/api/recent` doit répondre 200 |
+| Fumée finale | `/predict` à 200, pluviométrie négative à 422 |
+
+L'ordre suit l'énoncé : Container Apps d'abord, Function App ensuite.
+
+> **Pourquoi vérifier l'indexation.** Un déploiement de Function App peut réussir tout en laissant
+> `0 functions loaded`, et rien dans les logs de déploiement ne le signale — seul Application
+> Insights porte la cause (`FunctionLoadError`). C'est arrivé sur ce projet avec un paramètre mal
+> nommé. Sans ce contrôle, une modification de `function_app.py` pourrait passer la CI au vert et
+> le déploiement se dire réussi, sans que l'application serve quoi que ce soit.
 
 **Le job déclare `environment: production`**, ce qui remplit deux rôles d'un coup : la porte
 d'approbation à 5 relecteurs, et le contexte du sujet fédéré OIDC. Sans cette ligne,

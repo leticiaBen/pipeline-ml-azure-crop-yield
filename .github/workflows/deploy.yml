@@ -33,6 +33,7 @@ permissions:
 env:
   RG: rg-projet-cropyield
   APP: api-cropyield
+  FUNC: func-cropyield
   IMAGE: ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api
 
 jobs:
@@ -134,7 +135,69 @@ jobs:
           echo "| Image | \`${IMAGE}:${SHA}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| URL | $api |" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Fumee en production
+      # ---------------------------------------------------------------------
+      #  Function App — l'enonce demande « mise a jour de Container Apps, puis
+      #  deploiement de la Function App ». Sans ces etapes, une modification de
+      #  function_app.py passerait la CI au vert et le deploiement se dirait
+      #  reussi, sans jamais atteindre Azure.
+      # ---------------------------------------------------------------------
+      - name: Construction du paquet des Functions
+        run: |
+          rm -rf /tmp/funcpkg /tmp/func.zip
+          mkdir -p /tmp/funcpkg
+          # Seuls ces trois fichiers : ni tests, ni .venv, ni local.settings.json.
+          cp functions/function_app.py functions/host.json functions/requirements.txt /tmp/funcpkg/
+          (cd /tmp/funcpkg && zip -q -r /tmp/func.zip .)
+          unzip -l /tmp/func.zip
+
+      - name: Deploiement de la Function App
+        # --build-remote : les dependances sont installees cote Azure. Le
+        # paquet construit pese ~13 Mo pour 6 Ko de source.
+        run: |
+          az functionapp deployment source config-zip \
+            -n "$FUNC" -g "$RG" --src /tmp/func.zip --build-remote true -o none
+          echo "Paquet deploye"
+
+      - name: Verification — les trois fonctions sont indexees
+        # Ce controle n'est pas du zele. Un deploiement peut reussir et laisser
+        # « 0 functions loaded » : c'est arrive avec un parametre mal nomme, et
+        # RIEN dans les logs de deploiement ne le signalait. Seul Application
+        # Insights portait la cause. La CI echoue desormais dans ce cas.
+        run: |
+          attendues="dispatcher recent worker"
+          manque=1
+          for i in $(seq 1 24); do
+            liste=$(az functionapp function list -n "$FUNC" -g "$RG" \
+                      --query "[].name" -o tsv | sed 's|.*/||' | sort | tr '\n' ' ')
+            echo "tentative $i : [$liste]"
+            manque=0
+            for f in $attendues; do
+              case " $liste " in *" $f "*) ;; *) manque=1 ;; esac
+            done
+            [ "$manque" = "0" ] && break
+            sleep 10
+          done
+          if [ "$manque" != "0" ]; then
+            echo "::error::indexation incomplete, fonctions vues : [$liste]"
+            echo "::error::chercher la cause dans Application Insights :"
+            echo "::error::  traces | where message has 'FunctionLoadError'"
+            exit 1
+          fi
+          echo "Les trois fonctions sont indexees"
+          {
+            echo "### Function App"
+            echo "- fonctions indexees : \`$liste\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fumee des Functions — /api/recent repond
+        run: |
+          code=$(curl -s -o /tmp/recent.json -w '%{http_code}' --max-time 60 \
+            "https://$FUNC.azurewebsites.net/api/recent")
+          echo "api/recent : HTTP $code"
+          head -c 400 /tmp/recent.json; echo
+          [ "$code" = "200" ] || { echo "::error::/api/recent a renvoye $code"; exit 1; }
+
+      - name: Fumee finale — l'API repond et refuse ce qu'elle doit refuser
         run: |
           api="https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io"
           code=$(curl -s -o /tmp/p.json -w '%{http_code}' --max-time 30 -X POST "$api/predict" \

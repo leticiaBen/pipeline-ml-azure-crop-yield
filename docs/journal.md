@@ -20,13 +20,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Section 4.6 : `deploy.yml`, création de l'application Container Apps, `/version` expose le commit, plan de tournage | 1h40 | Deux échecs de déploiement : vérification d'image bricolée, puis sujet OIDC immuable |
 | 25/11/2026 | leticiaBen | Correction du sujet OIDC, déploiement réussi et vérifié de bout en bout | 0h30 | — |
 | 25/11/2026 | leticiaBen | Section 4.3 : rôles de l'identité, abonnement Event Grid, épreuve des trois chemins | 1h00 | Encodage Base64 des messages de file : échec sans aucune trace |
+| 25/11/2026 | leticiaBen | `deploy.yml` : déploiement de la Function App et vérification de l'indexation | 0h20 | — |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 12h30 |
+| leticiaBen | 12h50 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -300,8 +301,21 @@ niveau du groupe de ressources ou de l'abonnement, aucun rôle permettant d'attr
 À noter : le rôle Cosmos n'est **pas** un rôle Azure RBAC et passe par
 `az cosmosdb sql role assignment create`, une commande distincte — confusion classique.
 
+**25/11/2026 — `deploy.yml` ne déployait que la moitié du système.** Constat fait en relisant
+l'énoncé : la section 4.6 demande « mise à jour de Container Apps, **puis déploiement de la
+Function App** ». Le code des trois fonctions tournait bien en production, mais déployé à la main
+par zip, pas par le pipeline. En l'état, une modification de `function_app.py` aurait passé la CI
+au vert et le déploiement se serait dit réussi sans jamais atteindre Azure — un piège silencieux,
+et exactement ce qu'un correcteur peut tester en direct.
+
+Quatre étapes ajoutées : construction du paquet, déploiement, **vérification que les trois
+fonctions sont indexées**, et fumée sur `/api/recent`. La vérification d'indexation n'est pas du
+zèle : c'est précisément le symptôme rencontré avec le paramètre `req`, où le déploiement se
+déclarait réussi en laissant l'application muette.
+
 ## Prochaines étapes
 
 - Section 4.4 : page statique du tableau de bord dans `$web` (la fonction `recent` est déjà prête).
+- Section 4.5 : 2 métriques personnalisées, 1 alerte déclenchée, 3 requêtes KQL.
 - Capture d'écran des réplicas revenus à 0 (section 4.2), après un temps sans trafic.
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.
