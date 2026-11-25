@@ -23,13 +23,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 25/11/2026 | leticiaBen | `deploy.yml` : déploiement de la Function App et vérification de l'indexation | 0h20 | — |
 | 25/11/2026 | leticiaBen | Correction : `deploy.yml` n'avait pas de `checkout` | 0h10 | — |
 | 25/11/2026 | leticiaBen | Section 4.4 : agrégat par culture dans Cosmos, page du tableau de bord, dépôt dans `$web`, vérification dans un navigateur | 1h10 | Empreinte SRI fausse, et `hidden` neutralisé par `display: flex` |
+| 25/11/2026 | leticiaBen | `deploy.yml` : job de décision, les commits de documentation ne déclenchent plus d'approbation | 0h20 | — |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 14h10 |
+| leticiaBen | 14h30 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -354,6 +355,22 @@ champ `perItem` : moyennes prédites et réelles par culture. Agrégé côté wo
 page, parce que celle-ci n'a accès qu'à `/api/recent` et que faire traverser les 25 lignes de
 chaque lot au navigateur gonflerait les documents pour rien. Une culture sans rendement réel donne
 `None` et non `0`, sinon le graphique afficherait un écart fictif de 100 %.
+
+**25/11/2026 — Fatigue d'approbation : un commit de README mobilisait l'équipe.** Chaque push sur
+`main` mettait un déploiement en attente, y compris pour une capture d'écran ou une correction de
+texte. Avec les sections 4.5 et 4.7 à venir, qui produiront surtout de la documentation, c'était
+intenable.
+
+`deploy.yml` est passé à deux jobs. `decider` compare le commit à son parent et décide ; `deploy`,
+qui porte l'environnement `production`, n'est **même pas créé** si rien de déployable n'a changé —
+donc aucune approbation n'est demandée. Le filtre retient `api/`, `model/`, `functions/` et
+`deploy.yml`, en excluant les `*.md`, puisque le `.dockerignore` exclut déjà le Markdown du
+contexte de construction.
+
+Contrepartie assumée : après un commit de documentation, `GET /version` renvoie un commit
+antérieur à `HEAD`. Le critère de la section 4.6 reste satisfait — un commit de **code** met bien
+à jour la production — et le résumé d'exécution du workflow l'explique noir sur blanc, pour qu'un
+correcteur ne prenne pas l'écart pour un défaut.
 
 ## Prochaines étapes
 

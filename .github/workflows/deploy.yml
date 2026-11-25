@@ -10,6 +10,12 @@
 #  du commit doit exister sur GHCR avant qu'on demande a Container Apps de la
 #  tirer. Deux workflows sur le meme push s'executeraient en parallele, et le
 #  deploiement perdrait la course.
+#
+#  DEUX JOBS, et c'est voulu. Le job « decider » determine si quelque chose de
+#  deployable a change. Le job « deploy », qui porte l'environnement
+#  production, n'est alors meme pas cree pour un commit de documentation :
+#  aucune demande d'approbation ne part, et l'equipe n'est pas sollicitee pour
+#  une correction de faute dans un README.
 # =============================================================================
 name: Deploy
 
@@ -18,8 +24,8 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
-  # Declenchement manuel, utile pour redeployer un commit precis ou rejouer
-  # un deploiement sans toucher au code.
+  # Declenchement manuel : utile pour redeployer un commit precis, ou forcer
+  # un deploiement que le filtre aurait ecarte.
   workflow_dispatch:
     inputs:
       sha:
@@ -35,28 +41,19 @@ env:
   APP: api-cropyield
   FUNC: func-cropyield
   IMAGE: ghcr.io/leticiaben/pipeline-ml-azure-crop-yield/api
+  API_URL: https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io
 
 jobs:
-  deploy:
-    name: Mise a jour de l'API en production
-    # Ne deploie que si la CI a reussi : inutile de publier une image dont les
-    # tests ont echoue.
+  # ===========================================================================
+  decider:
+    name: Faut-il deployer ?
+    # Ne rien faire si la CI a echoue : inutile de deployer une image dont les
+    # tests ne sont pas passes.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-
-    # Deux roles, et c'est le coeur de la section 4.6 :
-    #   1. porte d'approbation manuelle, avec 5 relecteurs obligatoires
-    #   2. contexte du sujet federe OIDC
-    #      repo:leticiaBen/pipeline-ml-azure-crop-yield:environment:production
-    #      Sans cette ligne, azure/login echoue sur AADSTS700213.
-    environment:
-      name: production
-      url: https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io
-
-    permissions:
-      id-token: write    # obligatoire pour recevoir le jeton OIDC
-      contents: read
-
+    outputs:
+      sha: ${{ steps.cible.outputs.sha }}
+      deployer: ${{ steps.filtre.outputs.deployer }}
     steps:
       - name: Commit a deployer
         id: cible
@@ -71,31 +68,83 @@ jobs:
           echo "Commit cible : $sha"
 
       - name: Recuperation du code
-        # Ce job n'avait aucun checkout : ses premieres etapes n'appelaient que
-        # az et curl. Le paquet des Functions, lui, a besoin des fichiers.
-        #
-        # « ref » est OBLIGATOIRE ici, et pour la meme raison que head_sha plus
-        # haut : sur un evenement workflow_run, actions/checkout recupere par
-        # defaut la POINTE DE LA BRANCHE par defaut, pas le commit declencheur.
-        # Sans ce ref, on empaquetterait un autre code que celui qu'on vient de
-        # verifier — et rien ne le signalerait.
+        # « ref » est obligatoire, pour la meme raison que head_sha ci-dessus :
+        # actions/checkout recupere par defaut la pointe de la branche.
+        # fetch-depth 2 donne acces au commit parent, necessaire au diff.
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.cible.outputs.sha }}
+          fetch-depth: 2
+
+      - name: Quelque chose de deployable a-t-il change ?
+        id: filtre
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Declenchement manuel : on deploie sans filtrer."
+            echo "deployer=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if ! git rev-parse "HEAD^" >/dev/null 2>&1; then
+            echo "Commit parent inaccessible : on deploie par prudence."
+            echo "deployer=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          modifies=$(git diff --name-only HEAD^ HEAD)
+          echo "Fichiers modifies :"; echo "$modifies" | sed 's/^/  /'
+
+          # Un fichier Markdown sous api/ ou model/ ne change pas l'image :
+          # le .dockerignore exclut *.md du contexte de construction.
+          pertinents=$(printf '%s\n' "$modifies" \
+            | grep -E '^(api/|model/|functions/|\.github/workflows/deploy\.yml$)' \
+            | grep -vE '\.md$' || true)
+
+          if [ -n "$pertinents" ]; then
+            echo "deployer=true" >> "$GITHUB_OUTPUT"
+            { echo "### Deploiement declenche"; echo "Fichiers deployables modifies :";
+              printf '%s\n' "$pertinents" | sed 's/^/- `/; s/$/`/'; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "deployer=false" >> "$GITHUB_OUTPUT"
+            { echo "### Deploiement ignore";
+              echo "Aucun fichier de \`api/\`, \`model/\` ou \`functions/\` n'a change.";
+              echo "La production sert donc toujours un commit anterieur, et c'est normal.";
+              echo "Pour forcer : declenchement manuel de ce workflow."; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ===========================================================================
+  deploy:
+    name: Mise a jour de l'API en production
+    needs: decider
+    # Si rien de deployable n'a change, ce job n'existe pas : aucune
+    # approbation n'est demandee a l'equipe.
+    if: needs.decider.outputs.deployer == 'true'
+    runs-on: ubuntu-latest
+
+    # Deux roles, et c'est le coeur de la section 4.6 :
+    #   1. porte d'approbation manuelle, avec 5 relecteurs obligatoires
+    #   2. contexte du sujet federe OIDC. Sans cette ligne, azure/login
+    #      echoue sur AADSTS700213.
+    environment:
+      name: production
+      url: https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io
+
+    permissions:
+      id-token: write    # obligatoire pour recevoir le jeton OIDC
+      contents: read
+
+    env:
+      SHA: ${{ needs.decider.outputs.sha }}
+
+    steps:
+      - name: Recuperation du code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.decider.outputs.sha }}
 
       - name: L'image existe-t-elle sur GHCR ?
-        # Echouer ici donne un message clair, au lieu d'un echec opaque cote
-        # Azure.
-        #
         # « docker manifest inspect » plutot qu'une requete curl a la main :
         # l'outil negocie lui-meme les types de manifeste. Une premiere
         # version interrogeait le registre avec un en-tete Accept incomplet et
         # recevait un 404 trompeur — GHCR repond 404, et non 406, quand
-        # l'en-tete ne couvre pas le type exact du manifeste. Celui de cette
-        # image est application/vnd.oci.image.manifest.v1+json, que l'en-tete
-        # omettait. Le deploiement a echoue alors que l'image etait bien la.
-        env:
-          SHA: ${{ steps.cible.outputs.sha }}
+        # l'en-tete ne couvre pas le type exact du manifeste.
         run: |
           if docker manifest inspect "${IMAGE}:${SHA}" > /dev/null 2>&1; then
             echo "Image presente sur GHCR : ${IMAGE}:${SHA}"
@@ -112,8 +161,6 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Mise a jour de Container Apps
-        env:
-          SHA: ${{ steps.cible.outputs.sha }}
         # GIT_SHA est pose en meme temps que l'image : c'est ce qui rend le
         # deploiement verifiable par GET /version.
         run: |
@@ -127,38 +174,46 @@ jobs:
             -o table
 
       - name: Verification — GET /version renvoie le bon commit
-        env:
-          SHA: ${{ steps.cible.outputs.sha }}
-        # C'est le « Termine quand » de la section 4.6 : un commit sur main met
-        # a jour l'API de production, visible via GET /version.
+        # C'est le « Termine quand » de la section 4.6.
         run: |
-          api="https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io"
           for i in $(seq 1 30); do
-            vu=$(curl -s --max-time 30 "$api/version" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("commit",""))' 2>/dev/null || true)
+            vu=$(curl -s --max-time 30 "$API_URL/version" \
+                 | python3 -c 'import sys,json; print(json.load(sys.stdin).get("commit",""))' 2>/dev/null || true)
             echo "tentative $i : commit vu = ${vu:-aucune reponse}"
             [ "$vu" = "$SHA" ] && break
-            curl -s -o /dev/null --max-time 10 "$api/health" || true
+            curl -s -o /dev/null --max-time 10 "$API_URL/health" || true
           done
           [ "$vu" = "$SHA" ] || { echo "::error::l'API sert encore $vu au lieu de $SHA"; exit 1; }
+          {
+            echo "### Deploiement en production"
+            echo "| | |"; echo "|---|---|"
+            echo "| Commit | \`$SHA\` |"
+            echo "| Image | \`${IMAGE}:${SHA}\` |"
+            echo "| URL | $API_URL |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "### Deploiement en production" >> "$GITHUB_STEP_SUMMARY"
-          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit | \`$SHA\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image | \`${IMAGE}:${SHA}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| URL | $api |" >> "$GITHUB_STEP_SUMMARY"
+      - name: Fumee de l'API
+        run: |
+          code=$(curl -s -o /tmp/p.json -w '%{http_code}' --max-time 30 -X POST "$API_URL/predict" \
+            -H 'Content-Type: application/json' \
+            -d '{"Area":"France","Item":"Potatoes","Year":2012,
+                 "average_rain_fall_mm_per_year":867,"pesticides_tonnes":72000,"avg_temp":11.2}')
+          cat /tmp/p.json; echo
+          [ "$code" = "200" ] || { echo "::error::/predict a renvoye $code"; exit 1; }
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$API_URL/predict" \
+            -H 'Content-Type: application/json' \
+            -d '{"Area":"France","Item":"Potatoes","Year":2012,
+                 "average_rain_fall_mm_per_year":-500,"pesticides_tonnes":72000,"avg_temp":11.2}')
+          echo "pluie negative : HTTP $code"
+          [ "$code" = "422" ] || { echo "::error::attendu 422, obtenu $code"; exit 1; }
 
       # ---------------------------------------------------------------------
       #  Function App — l'enonce demande « mise a jour de Container Apps, puis
-      #  deploiement de la Function App ». Sans ces etapes, une modification de
-      #  function_app.py passerait la CI au vert et le deploiement se dirait
-      #  reussi, sans jamais atteindre Azure.
+      #  deploiement de la Function App ».
       # ---------------------------------------------------------------------
       - name: Construction du paquet des Functions
-        env:
-          SHA: ${{ steps.cible.outputs.sha }}
         run: |
-          # Garde-fou : le code recupere doit etre celui du commit cible.
           vu=$(git rev-parse HEAD)
           echo "commit recupere : $vu"
           [ "$vu" = "$SHA" ] || { echo "::error::checkout sur $vu au lieu de $SHA"; exit 1; }
@@ -182,7 +237,7 @@ jobs:
         # Ce controle n'est pas du zele. Un deploiement peut reussir et laisser
         # « 0 functions loaded » : c'est arrive avec un parametre mal nomme, et
         # RIEN dans les logs de deploiement ne le signalait. Seul Application
-        # Insights portait la cause. La CI echoue desormais dans ce cas.
+        # Insights portait la cause.
         run: |
           attendues="dispatcher recent worker"
           manque=1
@@ -204,10 +259,7 @@ jobs:
             exit 1
           fi
           echo "Les trois fonctions sont indexees"
-          {
-            echo "### Function App"
-            echo "- fonctions indexees : \`$liste\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Function App"; echo "- fonctions indexees : \`$liste\`"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fumee des Functions — /api/recent repond
         run: |
@@ -216,20 +268,3 @@ jobs:
           echo "api/recent : HTTP $code"
           head -c 400 /tmp/recent.json; echo
           [ "$code" = "200" ] || { echo "::error::/api/recent a renvoye $code"; exit 1; }
-
-      - name: Fumee finale — l'API repond et refuse ce qu'elle doit refuser
-        run: |
-          api="https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io"
-          code=$(curl -s -o /tmp/p.json -w '%{http_code}' --max-time 30 -X POST "$api/predict" \
-            -H 'Content-Type: application/json' \
-            -d '{"Area":"France","Item":"Potatoes","Year":2012,
-                 "average_rain_fall_mm_per_year":867,"pesticides_tonnes":72000,"avg_temp":11.2}')
-          cat /tmp/p.json; echo
-          [ "$code" = "200" ] || { echo "::error::/predict a renvoye $code"; exit 1; }
-
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$api/predict" \
-            -H 'Content-Type: application/json' \
-            -d '{"Area":"France","Item":"Potatoes","Year":2012,
-                 "average_rain_fall_mm_per_year":-500,"pesticides_tonnes":72000,"avg_temp":11.2}')
-          echo "pluie negative : HTTP $code"
-          [ "$code" = "422" ] || { echo "::error::attendu 422, obtenu $code"; exit 1; }

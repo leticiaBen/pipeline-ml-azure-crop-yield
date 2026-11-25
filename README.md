@@ -393,10 +393,24 @@ préparées dans [`infra/03-roles.sh`](infra/03-roles.sh).
 que Container Apps ne la tire. Deux workflows sur le même push s'exécuteraient en parallèle et le
 déploiement perdrait la course.
 
+**Deux jobs.** `decider` détermine si quelque chose de déployable a changé ; `deploy`, qui porte
+l'environnement `production`, n'est **même pas créé** pour un commit de documentation. Aucune
+demande d'approbation ne part alors, et l'équipe n'est pas sollicitée pour une correction de
+faute dans un README.
+
+Le filtre retient `api/`, `model/`, `functions/` et `deploy.yml` lui-même, en excluant les `*.md`
+— le `.dockerignore` exclut déjà le Markdown du contexte de construction, donc un README ne
+change pas l'image. Un déclenchement manuel (`workflow_dispatch`) passe outre le filtre.
+
+Conséquence assumée : après un commit de documentation, `GET /version` renvoie un commit
+antérieur à `HEAD`. Le critère de la section 4.6 reste satisfait — un commit **de code** sur
+`main` met bien à jour la production — et le résumé d'exécution l'explique explicitement.
+
 | Étape | Rôle |
 |---|---|
 | Commit à déployer | lit `workflow_run.head_sha`, **pas** `github.sha` |
 | Récupération du code | `checkout` avec `ref:` explicite sur ce SHA, puis garde-fou qui compare `git rev-parse HEAD` au SHA attendu |
+| Faut-il déployer ? | diff entre le commit et son parent, filtré sur les chemins déployables |
 | L'image existe-t-elle sur GHCR ? | `docker manifest inspect`, échec clair avant d'appeler Azure |
 | Connexion à Azure | OIDC, identité managée, **aucun secret Azure** |
 | Mise à jour de Container Apps | `--image ...:<sha>` et `--set-env-vars GIT_SHA=<sha>` |
