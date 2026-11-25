@@ -168,3 +168,22 @@ def test_la_file_est_configuree_en_base64(monkeypatch):
     assert isinstance(client._message_encode_policy, TextBase64EncodePolicy)
     assert isinstance(client._message_decode_policy, TextBase64DecodePolicy)
     fa._file = None
+
+
+# --- agregation par culture (alimente le tableau de bord) -----------------
+def test_agregation_par_culture():
+    resultats = [
+        {"entree": {"Item": "Maize"}, "predit": 100.0, "reel": 110.0},
+        {"entree": {"Item": "Maize"}, "predit": 200.0, "reel": 190.0},
+        {"entree": {"Item": "Wheat"}, "predit": 50.0, "reel": None},
+    ]
+    a = fa.agreger_par_culture(resultats)
+    assert a["Maize"] == {"n": 2, "predicted": 150.0, "actual": 150.0}
+    # Culture sans rendement reel : la moyenne reelle doit valoir None, pas 0,
+    # sinon le graphique afficherait un ecart fictif de 100 %.
+    assert a["Wheat"] == {"n": 1, "predicted": 50.0, "actual": None}
+
+
+def test_agregation_ignore_les_cultures_vides():
+    assert fa.agreger_par_culture(
+        [{"entree": {}, "predit": 1.0, "reel": None}]) == {}

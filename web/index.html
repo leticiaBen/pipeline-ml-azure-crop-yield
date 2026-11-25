@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rendement agricole — tableau de bord</title>
+<!--
+  Tableau de bord du pipeline — section 4.4 de l'énoncé.
+  Page statique hébergée dans le conteneur $web du compte de stockage.
+  Static Web Apps est souvent hors des régions autorisées pour un compte
+  Azure for Students, d'où ce choix.
+
+  Une seule source de données : la fonction HTTP /api/recent, dont le CORS
+  est limité à l'origine de ce site.
+-->
+<!-- Empreinte SRI calculee sur le fichier reel (openssl dgst -sha512 | base64),
+     jamais recopiee de memoire : une empreinte fausse fait refuser le script
+     par le navigateur, et la page s affiche alors sans aucun graphique, sans
+     erreur visible ailleurs que dans la console. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+        integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<style>
+  :root {
+    --fond: #f6f7f9; --carte: #ffffff; --bord: #e3e6ea;
+    --texte: #16191d; --doux: #5f6672;
+    --predit: #2f6fb5; --reel: #c9733a; --ok: #2f7d4f; --ko: #b3453a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --fond: #14171a; --carte: #1c2024; --bord: #2c3238;
+      --texte: #e9ecef; --doux: #9aa3ad;
+      --predit: #5e9bd8; --reel: #e09257; --ok: #5db37d; --ko: #e0776b;
+    }
+  }
+  * { box-sizing: border-box; }
+  /* L'attribut HTML « hidden » ne pose « display: none » que via la feuille
+     du navigateur : une regle d'auteur comme « display: flex » l'emporte et
+     l'element reste visible. Il faut donc la reaffirmer ici. */
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; padding: 24px 16px 48px; background: var(--fond); color: var(--texte);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 1060px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
+           justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 21px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  .sous { color: var(--doux); font-size: 13px; margin-top: 4px; }
+  .etat { font-size: 13px; color: var(--doux); display: flex; align-items: center; gap: 8px; }
+  .pastille { width: 8px; height: 8px; border-radius: 50%; background: var(--doux); }
+  .pastille.ok { background: var(--ok); }
+  .pastille.ko { background: var(--ko); }
+  .tuiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            margin-bottom: 20px; }
+  .carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px; padding: 16px; }
+  .tuile .libelle { font-size: 12px; color: var(--doux); text-transform: uppercase;
+                    letter-spacing: 0.04em; }
+  .tuile .valeur { font-size: 26px; font-weight: 650; margin-top: 6px;
+                   font-variant-numeric: tabular-nums; }
+  .tuile .note { font-size: 12px; color: var(--doux); margin-top: 2px; }
+  .graphiques { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 20px; }
+  @media (min-width: 820px) { .graphiques { grid-template-columns: 1fr 1fr; } }
+  .carte h2 { font-size: 14px; margin: 0 0 12px; font-weight: 600; }
+  .carte h2 span { font-weight: 400; color: var(--doux); }
+  .boite { position: relative; height: 260px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--bord);
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+       color: var(--doux); font-weight: 600; }
+  tbody tr:last-child td { border-bottom: none; }
+  .ecart.bas { color: var(--ok); } .ecart.haut { color: var(--ko); }
+  .defile { overflow-x: auto; }
+  .vide { color: var(--doux); padding: 28px 10px; text-align: center; }
+  /* Un graphique sans donnees affiche des axes « 1 1 0 0 » qui font croire a
+     une panne. Mieux vaut un message explicite a la place du canevas. */
+  .centre { position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; font-size: 13.5px; }
+  .petit { font-size: 12px; opacity: 0.75; }
+  footer { margin-top: 24px; font-size: 12px; color: var(--doux); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div>
+      <h1>Prédiction du rendement agricole</h1>
+      <div class="sous">Pipeline événementiel sur Azure — ECE Paris</div>
+    </div>
+    <div class="etat"><span class="pastille" id="pastille"></span><span id="etat">chargement…</span></div>
+  </header>
+
+  <div class="tuiles">
+    <div class="carte tuile"><div class="libelle">Lots traités</div>
+      <div class="valeur" id="t-lots">—</div><div class="note">20 derniers</div></div>
+    <div class="carte tuile"><div class="libelle">Lignes prédites</div>
+      <div class="valeur" id="t-lignes">—</div><div class="note">toutes cultures</div></div>
+    <div class="carte tuile"><div class="libelle">Écart moyen</div>
+      <div class="valeur" id="t-ecart">—</div><div class="note">prédit contre réel</div></div>
+    <div class="carte tuile"><div class="libelle">Modèle</div>
+      <div class="valeur" id="t-modele">—</div><div class="note">version servie</div></div>
+  </div>
+
+  <div class="graphiques">
+    <div class="carte">
+      <h2>Prédit contre réel <span>— par lot, du plus ancien au plus récent</span></h2>
+      <div class="boite">
+        <canvas id="g-lots"></canvas>
+        <div class="vide centre" id="v-lots" hidden>en attente d'un lot traité</div>
+      </div>
+    </div>
+    <div class="carte">
+      <h2>Rendement moyen par culture <span>— hg/ha</span></h2>
+      <div class="boite">
+        <canvas id="g-cultures"></canvas>
+        <div class="vide centre" id="v-cultures" hidden>
+          en attente d'un lot traité<br><span class="petit">l'agrégat par culture est calculé par le worker</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="carte">
+    <h2>Dernières inférences</h2>
+    <div class="defile">
+      <table>
+        <thead><tr>
+          <th>Fichier</th><th>Horodatage</th><th>Lignes</th>
+          <th>Prédit</th><th>Réel</th><th>Écart</th><th>Durée</th><th>Modèle</th>
+        </tr></thead>
+        <tbody id="corps"><tr><td colspan="8" class="vide">chargement…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Source : <code id="src"></code> — actualisation automatique toutes les 30 s.
+  </footer>
+</div>
+
+<script>
+// L'URL de la fonction. Le CORS de /api/recent est limité à l'origine de ce
+// site, donc la page ne fonctionne servie depuis $web, pas en fichier local.
+const API = "https://func-cropyield.azurewebsites.net/api/recent";
+const PERIODE = 30000;
+
+const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+const $ = (id) => document.getElementById(id);
+$("src").textContent = API;
+
+let gLots = null, gCultures = null;
+
+function couleurs() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    predit: s.getPropertyValue("--predit").trim(),
+    reel: s.getPropertyValue("--reel").trim(),
+    bord: s.getPropertyValue("--bord").trim(),
+    doux: s.getPropertyValue("--doux").trim(),
+  };
+}
+
+function etat(texte, classe) {
+  $("etat").textContent = texte;
+  $("pastille").className = "pastille" + (classe ? " " + classe : "");
+}
+
+function optionsCommunes(c, titreY) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color: c.doux, boxWidth: 12, font: { size: 12 } } } },
+    scales: {
+      x: { ticks: { color: c.doux, font: { size: 11 } }, grid: { display: false } },
+      y: {
+        title: { display: true, text: titreY, color: c.doux, font: { size: 11 } },
+        ticks: { color: c.doux, font: { size: 11 }, callback: (v) => nf.format(v) },
+        grid: { color: c.bord },
+      },
+    },
+  };
+}
+
+function basculerVide(idCanvas, idVide, vide) {
+  $(idCanvas).hidden = vide;
+  $(idVide).hidden = !vide;
+}
+
+function dessinerLots(items) {
+  basculerVide("g-lots", "v-lots", items.length === 0);
+  if (!items.length) return;
+  // Du plus ancien au plus récent : une courbe se lit de gauche à droite.
+  const ordre = [...items].reverse();
+  const c = couleurs();
+  const donnees = {
+    labels: ordre.map((i) => i.fileName.replace(/\.csv$/, "")),
+    datasets: [
+      { label: "Prédit", data: ordre.map((i) => i.meanPredicted),
+        borderColor: c.predit, backgroundColor: c.predit, tension: 0.25, pointRadius: 3 },
+      { label: "Réel", data: ordre.map((i) => i.meanActual),
+        borderColor: c.reel, backgroundColor: c.reel, tension: 0.25, pointRadius: 3,
+        borderDash: [5, 4] },
+    ],
+  };
+  if (gLots) { gLots.data = donnees; gLots.update(); return; }
+  gLots = new Chart($("g-lots"), { type: "line", data: donnees,
+    options: optionsCommunes(c, "hg/ha (moyenne du lot)") });
+}
+
+function dessinerCultures(items) {
+  // Agrégation de tous les lots, pondérée par le nombre de lignes.
+  const acc = {};
+  for (const it of items) {
+    for (const [culture, a] of Object.entries(it.perItem || {})) {
+      const e = acc[culture] || (acc[culture] = { n: 0, sp: 0, nr: 0, sr: 0 });
+      e.n += a.n; e.sp += a.predicted * a.n;
+      if (a.actual !== null && a.actual !== undefined) { e.nr += a.n; e.sr += a.actual * a.n; }
+    }
+  }
+  const cultures = Object.keys(acc).sort((x, y) => acc[y].sp / acc[y].n - acc[x].sp / acc[x].n);
+  // Les documents ecrits avant l'ajout de l'agregat n'ont pas de perItem :
+  // la page doit se degrader proprement plutot que d'afficher un cadre vide.
+  basculerVide("g-cultures", "v-cultures", cultures.length === 0);
+  if (!cultures.length) return;
+  const c = couleurs();
+  const donnees = {
+    labels: cultures,
+    datasets: [
+      { label: "Prédit", data: cultures.map((k) => acc[k].sp / acc[k].n), backgroundColor: c.predit },
+      { label: "Réel", data: cultures.map((k) => acc[k].nr ? acc[k].sr / acc[k].nr : null),
+        backgroundColor: c.reel },
+    ],
+  };
+  if (gCultures) { gCultures.data = donnees; gCultures.update(); return; }
+  gCultures = new Chart($("g-cultures"), { type: "bar", data: donnees,
+    options: optionsCommunes(c, "hg/ha") });
+}
+
+function remplirTable(items) {
+  if (!items.length) {
+    $("corps").innerHTML = '<tr><td colspan="8" class="vide">aucune inférence pour le moment</td></tr>';
+    return;
+  }
+  $("corps").innerHTML = items.map((i) => {
+    const ecart = (i.meanActual && i.meanPredicted)
+      ? (i.meanPredicted - i.meanActual) / i.meanActual * 100 : null;
+    const cl = ecart === null ? "" : (Math.abs(ecart) <= 10 ? "bas" : "haut");
+    const h = new Date(i.timestamp).toLocaleString("fr-FR",
+      { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return `<tr>
+      <td>${i.fileName}</td><td>${h}</td><td>${i.rowCount}</td>
+      <td>${nf.format(i.meanPredicted ?? 0)}</td>
+      <td>${i.meanActual === null || i.meanActual === undefined ? "—" : nf.format(i.meanActual)}</td>
+      <td class="ecart ${cl}">${ecart === null ? "—" : (ecart > 0 ? "+" : "") + ecart.toFixed(1) + " %"}</td>
+      <td>${nf.format(i.durationMs ?? 0)} ms</td><td>${i.modelVersion ?? "—"}</td>
+    </tr>`;
+  }).join("");
+}
+
+function remplirTuiles(items) {
+  $("t-lots").textContent = items.length;
+  $("t-lignes").textContent = nf.format(items.reduce((s, i) => s + (i.rowCount || 0), 0));
+  const avec = items.filter((i) => i.meanActual && i.meanPredicted);
+  $("t-ecart").textContent = avec.length
+    ? (avec.reduce((s, i) => s + Math.abs(i.meanPredicted - i.meanActual) / i.meanActual, 0)
+        / avec.length * 100).toFixed(1) + " %"
+    : "—";
+  $("t-modele").textContent = items[0]?.modelVersion ?? "—";
+}
+
+async function rafraichir() {
+  try {
+    // L'API et la Function App descendent à 0 réplica : le premier appel
+    // après une période creuse peut prendre une dizaine de secondes. On le
+    // dit à l'utilisateur plutôt que d'afficher une erreur.
+    etat("interrogation…");
+    const t = setTimeout(() => etat("réveil du service, patientez…"), 2500);
+    const r = await fetch(API, { cache: "no-store" });
+    clearTimeout(t);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    const items = d.items || [];
+    remplirTuiles(items); remplirTable(items);
+    dessinerLots(items); dessinerCultures(items);
+    etat("à jour — " + new Date().toLocaleTimeString("fr-FR"), "ok");
+  } catch (e) {
+    etat("injoignable : " + e.message, "ko");
+  }
+}
+
+rafraichir();
+setInterval(rafraichir, PERIODE);
+// Rafraîchit aussi au retour sur l'onglet, pour ne pas lire des chiffres périmés.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) rafraichir(); });
+</script>
+</body>
+</html>

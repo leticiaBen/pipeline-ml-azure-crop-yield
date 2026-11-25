@@ -278,8 +278,9 @@ def worker(message: func.QueueMessage) -> None:
         json.dumps(sortie, ensure_ascii=False, indent=2).encode(),
         overwrite=True)
 
-    # Cosmos ne recoit que les metadonnees, pas les resultats ligne par
-    # ligne : le document reste petit et la facture en RU avec lui.
+    # Cosmos ne recoit que les metadonnees et des agregats, jamais les
+    # resultats ligne par ligne : le document reste petit et la facture en RU
+    # avec lui. Les details completes sont dans output/.
     predits = [r["predit"] for r in resultats]
     reels = [r["reel"] for r in resultats if r["reel"] is not None]
     conteneur_cosmos().upsert_item({
@@ -294,9 +295,39 @@ def worker(message: func.QueueMessage) -> None:
         "meanPredicted": round(sum(predits) / len(predits), 2) if predits else None,
         "meanActual": round(sum(reels) / len(reels), 2) if reels else None,
         "items": sorted({r["entree"].get("Item") for r in resultats if r["entree"].get("Item")}),
+        "perItem": agreger_par_culture(resultats),
     })
     logging.info("worker: %s traite, %d lignes en %.0f ms",
                  nom, len(resultats), duree_ms)
+
+
+def agreger_par_culture(resultats: list[dict]) -> dict:
+    """Moyennes predites et reelles par culture.
+
+    Agregé ici et non dans le tableau de bord : la page statique n'a acces
+    qu'a /api/recent, et faire traverser les 25 lignes de chaque lot au
+    navigateur gonflerait les documents Cosmos pour rien. Un agregat de 10
+    cultures au maximum reste minuscule.
+    """
+    par_culture: dict[str, dict] = {}
+    for r in resultats:
+        culture = r["entree"].get("Item")
+        if not culture:
+            continue
+        a = par_culture.setdefault(culture, {"n": 0, "sp": 0.0, "sr": 0.0, "nr": 0})
+        a["n"] += 1
+        a["sp"] += r["predit"]
+        if r["reel"] is not None:
+            a["sr"] += r["reel"]
+            a["nr"] += 1
+    return {
+        culture: {
+            "n": a["n"],
+            "predicted": round(a["sp"] / a["n"], 2),
+            "actual": round(a["sr"] / a["nr"], 2) if a["nr"] else None,
+        }
+        for culture, a in par_culture.items()
+    }
 
 
 def lire_csv(contenu: bytes) -> list[dict]:
@@ -353,7 +384,8 @@ def recent(req: func.HttpRequest) -> func.HttpResponse:
         elements = list(conteneur_cosmos().query_items(
             query="SELECT TOP 20 c.id, c.fileName, c.timestamp, c.rowCount, "
                   "c.durationMs, c.modelVersion, c.meanPredicted, "
-                  "c.meanActual, c.items FROM c ORDER BY c.timestamp DESC",
+                  "c.meanActual, c.items, c.perItem FROM c "
+                  "ORDER BY c.timestamp DESC",
             enable_cross_partition_query=True))
     except Exception as e:
         logging.error("recent: %s", e)

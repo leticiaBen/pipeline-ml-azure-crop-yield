@@ -22,13 +22,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 25/11/2026 | leticiaBen | Section 4.3 : rôles de l'identité, abonnement Event Grid, épreuve des trois chemins | 1h00 | Encodage Base64 des messages de file : échec sans aucune trace |
 | 25/11/2026 | leticiaBen | `deploy.yml` : déploiement de la Function App et vérification de l'indexation | 0h20 | — |
 | 25/11/2026 | leticiaBen | Correction : `deploy.yml` n'avait pas de `checkout` | 0h10 | — |
+| 25/11/2026 | leticiaBen | Section 4.4 : agrégat par culture dans Cosmos, page du tableau de bord, dépôt dans `$web`, vérification dans un navigateur | 1h10 | Empreinte SRI fausse, et `hidden` neutralisé par `display: flex` |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 13h00 |
+| leticiaBen | 14h10 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -326,9 +327,36 @@ on empaquetterait un code différent de celui qu'on vient de vérifier, sans qu'
 n'apparaisse. C'est le même piège que `github.sha`, sous un autre déguisement. Un garde-fou
 compare maintenant `git rev-parse HEAD` au SHA attendu et fait échouer le job en cas d'écart.
 
+**25/11/2026 — Deux bugs que seul un navigateur révèle.** La page a été ouverte et regardée, pas
+seulement déployée.
+
+L'**empreinte SRI de Chart.js** avait été écrite de mémoire, et elle était fausse. Le navigateur
+refusait le script : la page s'affichait avec ses tuiles et son tableau, mais **sans aucun
+graphique**, et sans erreur visible ailleurs que dans la console. Recalculée sur le fichier réel
+avec `openssl dgst -sha512 | base64`. Règle à retenir : une empreinte SRI se calcule, elle ne se
+recopie jamais de mémoire.
+
+L'**attribut `hidden` neutralisé par `display: flex`**. `hidden` ne pose `display: none` que via
+la feuille du navigateur ; une règle d'auteur l'emporte. Le message « en attente d'un lot traité »
+s'affichait par-dessus un graphique qui avait des données. Corrigé par
+`[hidden] { display: none !important; }`.
+
+Aucun test automatique n'aurait révélé l'un ou l'autre.
+
+**25/11/2026 — CORS à deux niveaux.** L'hôte Functions intercepte les requêtes `OPTIONS` et y
+répond depuis sa propre configuration CORS, sans appeler la fonction : les en-têtes posés dans le
+code ne suffisent pas pour un pré-vol. `az functionapp cors add` a été configuré avec l'origine du
+site, et elle seule. Sans incidence ici — un `GET` simple n'est pas pré-volé — mais le bug serait
+apparu dès l'ajout d'un en-tête personnalisé.
+
+**25/11/2026 — Agrégat par culture calculé par le worker.** Le document Cosmos porte désormais un
+champ `perItem` : moyennes prédites et réelles par culture. Agrégé côté worker plutôt que dans la
+page, parce que celle-ci n'a accès qu'à `/api/recent` et que faire traverser les 25 lignes de
+chaque lot au navigateur gonflerait les documents pour rien. Une culture sans rendement réel donne
+`None` et non `0`, sinon le graphique afficherait un écart fictif de 100 %.
+
 ## Prochaines étapes
 
-- Section 4.4 : page statique du tableau de bord dans `$web` (la fonction `recent` est déjà prête).
 - Section 4.5 : 2 métriques personnalisées, 1 alerte déclenchée, 3 requêtes KQL.
 - Capture d'écran des réplicas revenus à 0 (section 4.2), après un temps sans trafic.
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.
