@@ -581,6 +581,30 @@ Les exceptions du worker ne sont **pas rattrapées**, volontairement : c'est le 
 les échecs. Un `try/except` bien intentionné désactiverait tout le mécanisme de reprise.
 
 
+## 6bis. Tableau de bord
+
+![Tableau de bord](docs/captures/tableau-de-bord.jpg)
+
+**https://stcropyieldpipe.z28.web.core.windows.net/**
+
+Page statique unique dans le conteneur `$web` — Static Web Apps est souvent hors des régions
+autorisées pour un compte Azure for Students. Source de données unique : `GET /api/recent`, avec
+un CORS limité à l'origine de ce site. Actualisation toutes les 30 s, et au retour sur l'onglet.
+
+| | |
+|---|---|
+| 4 tuiles | lots traités, lignes prédites, écart moyen, version du modèle |
+| Graphique 1 | prédit contre réel, par lot |
+| Graphique 2 | rendement moyen par culture, 9 cultures sur la capture |
+| Tableau | 20 dernières inférences, écart en rouge au-delà de 10 % |
+
+Le « Terminé quand » de la section 4.4 est atteint : `batch_004.csv` déposé dans `input/` est
+apparu dans le tableau de bord **sans aucune action manuelle**.
+
+Détail du [`web/README.md`](web/README.md) : deux bugs n'ont été trouvés qu'en ouvrant la page
+dans un navigateur — une empreinte SRI fausse qui supprimait tous les graphiques, et un attribut
+`hidden` neutralisé par une règle `display: flex`.
+
 ## 7. Requêtes KQL
 
 <!-- À compléter : 3 requêtes + captures d'écran (inférences par heure, 5 fichiers les plus lents, répartition des erreurs) -->
