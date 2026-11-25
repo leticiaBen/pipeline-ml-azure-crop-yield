@@ -40,12 +40,22 @@ jobs:
       - name: Lint — ruff sur api/ et model/
         run: ruff check .
 
-      - name: Tests — pytest
+      - name: Tests — pytest sur l'API
         working-directory: api
         # « python -m pytest » et non « pytest » : la forme -m ajoute le
         # dossier courant à sys.path, sans quoi « from main import app »
         # échoue dans les tests.
         run: python -m pytest -q
+
+      - name: Dépendances des Functions
+        run: pip install -r functions/requirements.txt pytest
+
+      - name: Tests — pytest sur les Functions
+        working-directory: functions
+        # Teste la logique de validation et de lecture CSV sans le runtime
+        # Functions : ce sont les fonctions qui decident d'accepter ou de
+        # rejeter un fichier, donc celles ou une erreur coute le plus cher.
+        run: python -m pytest tests -q
 
   # ---------------------------------------------------------------------------
   image:

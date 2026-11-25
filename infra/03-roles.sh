@@ -35,23 +35,32 @@ az role assignment list --assignee "$GH_PID" --all \
   --query "[].{role:roleDefinitionName, portee:scope}" -o table
 
 # -----------------------------------------------------------------------------
-# 2. Identité de la Function App → Stockage et Cosmos DB   [À FAIRE PLUS TARD]
-#    Impossible avant que la Function App existe. Connexions par identité :
-#    aucune chaîne de connexion dans les paramètres d'application.
+# 2. Identité de la Function App → Stockage et Cosmos DB
+#    La Function App existe depuis 04-functions.sh, et son identité est déjà
+#    assignée. Sans ces rôles, le code échoue sur chaque accès :
+#    DefaultAzureCredential obtient un jeton valide, mais le plan de données
+#    le refuse.
 # -----------------------------------------------------------------------------
-# az functionapp identity assign -n "$FUNC" -g "$RG"
-# PID=$(az functionapp identity show -n "$FUNC" -g "$RG" --query principalId -o tsv)
-# ST_ID=$(az storage account show -n "$ST" -g "$RG" --query id -o tsv)
-#
-# for r in "Storage Blob Data Owner" "Storage Queue Data Contributor"; do
-#   az role assignment create --role "$r" \
-#     --assignee-object-id "$PID" --assignee-principal-type ServicePrincipal \
-#     --scope "$ST_ID"
-# done
-#
+PID=$(az functionapp identity show -n "$FUNC" -g "$RG" --query principalId -o tsv)
+ST_ID=$(az storage account show -n "$ST" -g "$RG" --query id -o tsv)
+
+# « Blob Data Owner » et non « Contributor » : le dispatcher doit poser des
+# MÉTADONNÉES sur le blob copié dans rejected/, ce que Contributor ne couvre
+# pas pour toutes les opérations.
+for r in "Storage Blob Data Owner" "Storage Queue Data Contributor"; do
+  az role assignment create --role "$r" \
+    --assignee-object-id "$PID" --assignee-principal-type ServicePrincipal \
+    --scope "$ST_ID"
+done
+
 # Plan de données Cosmos DB : ce n'est PAS un rôle Azure RBAC, d'où une
-# commande distincte. L'identifiant ci-dessous est celui du rôle intégré
+# commande distincte. L'identifiant est celui du rôle intégré
 # « Cosmos DB Built-in Data Contributor ».
-# az cosmosdb sql role assignment create -a "$COSMOS" -g "$RG" --scope / \
-#   --principal-id "$PID" \
-#   --role-definition-id 00000000-0000-0000-0000-000000000002
+az cosmosdb sql role assignment create -a "$COSMOS" -g "$RG" --scope / \
+  --principal-id "$PID" \
+  --role-definition-id 00000000-0000-0000-0000-000000000002
+
+# Contrôle : cette identité ne doit avoir que ces rôles, et rien au niveau de
+# l'abonnement.
+az role assignment list --assignee "$PID" --all \
+  --query "[].{role:roleDefinitionName, portee:scope}" -o table

@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage__accountName": "stcropyieldpipe",
+    "STORAGE_ACCOUNT_NAME": "stcropyieldpipe",
+    "COSMOS_URL": "https://cosmos-cropyield.documents.azure.com:443/",
+    "COSMOS_DATABASE": "pipeline",
+    "COSMOS_CONTAINER": "inferences",
+    "API_URL": "https://api-cropyield.calmmoss-a33fdd9d.francecentral.azurecontainerapps.io",
+    "API_TIMEOUT_S": "20",
+    "MAX_BLOB_BYTES": "5242880",
+    "DASHBOARD_ORIGIN": "https://stcropyieldpipe.z28.web.core.windows.net"
+  }
+}
