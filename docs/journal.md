@@ -17,13 +17,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Réattribution des 4 commits au compte GitHub | 0h15 | Aucune identité Git sur la machine : les 3 premiers commits n'étaient rattachés à aucun compte |
 | 24/11/2026 | leticiaBen | Labels OCI sur l'image et contrôle en CI | 0h20 | Le Dockerfile n'avait aucun LABEL : le paquet GHCR n'était relié à aucun dépôt |
 | 24/11/2026 | leticiaBen | Passage du paquet GHCR en public et vérification de l'accès anonyme au registre | 0h10 | La visibilité d'un paquet GHCR n'est modifiable que dans l'interface web |
+| 24/11/2026 | leticiaBen | Section 4.6 : `deploy.yml`, création de l'application Container Apps, `/version` expose le commit, plan de tournage | 1h40 | Deux échecs de déploiement : vérification d'image bricolée, puis sujet OIDC immuable |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 9h20 |
+| leticiaBen | 11h00 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -225,6 +226,29 @@ qu'imposerait un paquet privé.
 endpoint REST, ni commande `gh`. Chercher une automatisation est une perte de temps : c'est une
 opération d'interface web, *Package settings* → *Danger Zone* → *Change visibility*, avec
 confirmation par la frappe du nom du paquet.
+
+**24/11/2026 — AADSTS700213, et la cause que l'énoncé ne donne pas.** Premier déploiement
+approuvé par @hibabouchaala, donc la porte fonctionne. Mais `azure/login` a échoué avec le sujet
+réellement présenté par GitHub :
+`repo:leticiaBen@93777455/pipeline-ml-azure-crop-yield@1469854412:environment:production`.
+GitHub y insère désormais les **identifiants numériques** du compte et du dépôt, pas seulement
+leurs noms. La forme donnée par la section 6 de l'énoncé,
+`repo:<compte>/<depot>:environment:production`, ne correspond plus. Une seconde identification
+fédérée a été créée avec le sujet exact lu dans le message d'erreur. Les deux coexistent, ce qui
+couvre les deux formats. Leçon : ne pas deviner le sujet, le lire dans l'erreur.
+
+**24/11/2026 — GHCR répond 404 là où 406 serait attendu.** Ma vérification d'existence d'image
+échouait alors que l'image était publiée. Isolé par comparaison de quatre requêtes ne variant que
+par l'en-tête `Accept` : avec les 2 types que j'avais mis, 404 ; avec les 4 types de mon test
+local, 200. Le manifeste est de type `application/vnd.oci.image.manifest.v1+json`, précisément
+celui que j'omettais. Remplacé par `docker manifest inspect`, qui négocie lui-même les types.
+Leçon : ne pas écrire un client de registre à la main quand l'outil existe.
+
+**24/11/2026 — Déployer par étiquette mutable ne fonctionne pas.** La révision active tournait
+encore sur l'image `:1.0.0` figée à la création de l'application, sans le champ `commit` ajouté
+depuis. Container Apps ne retire pas une image dont l'étiquette n'a pas changé. C'est la raison
+pour laquelle `deploy.yml` déploie par SHA : chaque commit produit une étiquette neuve, donc une
+nouvelle révision et un vrai `pull`.
 
 ## Prochaines étapes
 
