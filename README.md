@@ -396,6 +396,7 @@ déploiement perdrait la course.
 | Étape | Rôle |
 |---|---|
 | Commit à déployer | lit `workflow_run.head_sha`, **pas** `github.sha` |
+| Récupération du code | `checkout` avec `ref:` explicite sur ce SHA, puis garde-fou qui compare `git rev-parse HEAD` au SHA attendu |
 | L'image existe-t-elle sur GHCR ? | `docker manifest inspect`, échec clair avant d'appeler Azure |
 | Connexion à Azure | OIDC, identité managée, **aucun secret Azure** |
 | Mise à jour de Container Apps | `--image ...:<sha>` et `--set-env-vars GIT_SHA=<sha>` |
@@ -598,6 +599,7 @@ les échecs. Un `try/except` bien intentionné désactiverait tout le mécanisme
 | GHCR répond 404 au lieu de 406 | Vérification d'existence d'image en échec alors que l'image était publiée | L'en-tête `Accept` ne couvrait pas `application/vnd.oci.image.manifest.v1+json`, le type réel du manifeste. GHCR répond alors 404, ce qui fait croire à une image absente. Remplacé par `docker manifest inspect`, qui négocie lui-même les types. |
 | **Encodage des messages de file** | Le message atteint `maxDequeueCount` en 6 secondes et part en file poison **sans aucune trace du worker** | Le déclencheur Functions attend du **Base64** (`QueuesOptions.MessageEncoding`, visible dans les traces de démarrage), alors que le SDK `azure-storage-queue` n'encode rien par défaut. La liaison échoue avant le code utilisateur, d'où l'absence de trace. Corrigé par `TextBase64EncodePolicy` côté dispatcher. |
 | **Nom du paramètre d'une fonction HTTP** | `0 functions loaded`, et un déploiement annoncé comme réussi | `@app.route` n'accepte pas d'`arg_name`, contrairement à `event_grid_trigger` et `queue_trigger` : le paramètre **doit** s'appeler `req`. Et cette seule erreur fait échouer l'indexation des **trois** fonctions. Cause visible uniquement dans Application Insights : `FunctionLoadError`. |
+| **`workflow_run` et le code récupéré** | `cp: cannot stat 'functions/function_app.py': No such file or directory` | Le job n'avait aucun `checkout` : ses premières étapes n'appelaient que `az` et `curl`. Ajouté — avec `ref:` **explicite** sur `workflow_run.head_sha`, car sur cet événement `actions/checkout` récupère par défaut la pointe de la branche et non le commit déclencheur. Un garde-fou compare désormais `git rev-parse HEAD` au SHA attendu. |
 | *à compléter au fil du projet* | | |
 
 ## 9. Structure du dépôt

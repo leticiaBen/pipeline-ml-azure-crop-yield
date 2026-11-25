@@ -70,6 +70,19 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Commit cible : $sha"
 
+      - name: Recuperation du code
+        # Ce job n'avait aucun checkout : ses premieres etapes n'appelaient que
+        # az et curl. Le paquet des Functions, lui, a besoin des fichiers.
+        #
+        # « ref » est OBLIGATOIRE ici, et pour la meme raison que head_sha plus
+        # haut : sur un evenement workflow_run, actions/checkout recupere par
+        # defaut la POINTE DE LA BRANCHE par defaut, pas le commit declencheur.
+        # Sans ce ref, on empaquetterait un autre code que celui qu'on vient de
+        # verifier — et rien ne le signalerait.
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.cible.outputs.sha }}
+
       - name: L'image existe-t-elle sur GHCR ?
         # Echouer ici donne un message clair, au lieu d'un echec opaque cote
         # Azure.
@@ -142,7 +155,14 @@ jobs:
       #  reussi, sans jamais atteindre Azure.
       # ---------------------------------------------------------------------
       - name: Construction du paquet des Functions
+        env:
+          SHA: ${{ steps.cible.outputs.sha }}
         run: |
+          # Garde-fou : le code recupere doit etre celui du commit cible.
+          vu=$(git rev-parse HEAD)
+          echo "commit recupere : $vu"
+          [ "$vu" = "$SHA" ] || { echo "::error::checkout sur $vu au lieu de $SHA"; exit 1; }
+
           rm -rf /tmp/funcpkg /tmp/func.zip
           mkdir -p /tmp/funcpkg
           # Seuls ces trois fichiers : ni tests, ni .venv, ni local.settings.json.

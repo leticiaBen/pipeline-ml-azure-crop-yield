@@ -21,13 +21,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 25/11/2026 | leticiaBen | Correction du sujet OIDC, déploiement réussi et vérifié de bout en bout | 0h30 | — |
 | 25/11/2026 | leticiaBen | Section 4.3 : rôles de l'identité, abonnement Event Grid, épreuve des trois chemins | 1h00 | Encodage Base64 des messages de file : échec sans aucune trace |
 | 25/11/2026 | leticiaBen | `deploy.yml` : déploiement de la Function App et vérification de l'indexation | 0h20 | — |
+| 25/11/2026 | leticiaBen | Correction : `deploy.yml` n'avait pas de `checkout` | 0h10 | — |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 12h50 |
+| leticiaBen | 13h00 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -312,6 +313,18 @@ Quatre étapes ajoutées : construction du paquet, déploiement, **vérification
 fonctions sont indexées**, et fumée sur `/api/recent`. La vérification d'indexation n'est pas du
 zèle : c'est précisément le symptôme rencontré avec le paramètre `req`, où le déploiement se
 déclarait réussi en laissant l'application muette.
+
+**25/11/2026 — Deuxième piège de `workflow_run`, après celui du SHA.** Le déploiement a échoué sur
+`cp: cannot stat 'functions/function_app.py'`. Le job `deploy` n'avait **aucune** étape de
+`checkout` : ses étapes d'origine n'appelaient que `az` et `curl`, le dépôt n'était donc jamais
+récupéré. Le constat rassurant : Container Apps avait été mis à jour et vérifié avant l'échec, la
+production n'a pas été laissée dans un état incohérent.
+
+Le `checkout` ajouté porte un `ref:` **explicite** sur `workflow_run.head_sha`. Sans lui,
+`actions/checkout` récupère la pointe de la branche par défaut et non le commit déclencheur :
+on empaquetterait un code différent de celui qu'on vient de vérifier, sans qu'aucune erreur
+n'apparaisse. C'est le même piège que `github.sha`, sous un autre déguisement. Un garde-fou
+compare maintenant `git rev-parse HEAD` au SHA attendu et fait échouer le job en cas d'écart.
 
 ## Prochaines étapes
 
