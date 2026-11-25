@@ -490,9 +490,83 @@ assumée du découpage temporel — le modèle ne peut pas extrapoler une tendan
 Un découpage aléatoire masquerait ce défaut en lui donnant des années postérieures à apprendre.
 
 
-## 6. Exemple d'événement Event Grid et de message de file
+## 6. Le pipeline événementiel en fonctionnement
 
-<!-- À compléter : payload BlobCreated reçu par le dispatcher + message JSON publié dans la file -->
+Une **seule** Function App, `func-cropyield` (Flex Consumption FC1, Python 3.12, 512 Mo), contient
+les trois fonctions — contrainte du plan, qui n'héberge qu'une application :
+
+```
+func-cropyield/dispatcher   eventGridTrigger
+func-cropyield/worker       queueTrigger
+func-cropyield/recent       httpTrigger
+```
+
+Abonnement Event Grid `blob-to-dispatcher`, filtré sur `Microsoft.Storage.BlobCreated` et le
+préfixe `/blobServices/default/containers/input/`.
+
+### L'événement reçu par le dispatcher
+
+Champs effectivement exploités, relevés dans les traces :
+
+```json
+{
+  "url": "https://stcropyieldpipe.blob.core.windows.net/input/pluie_negative.csv",
+  "eTag": "0x8DF4AF5A5AAF0E2",
+  "contentLength": 311,
+  "api": "PutBlob"
+}
+```
+
+### Le message publié dans la file
+
+```json
+{
+  "blobName": "pluie_negative.csv",
+  "eTag": "0x8DF4AF5A5AAF0E2",
+  "size": 311,
+  "enqueuedAt": "2026-11-25T13:11:45.123456+00:00"
+}
+```
+
+Encodé en **Base64** dans la file — voir le piège plus bas, c'est loin d'être un détail.
+
+### Les trois chemins, éprouvés
+
+| Chemin | Fichier déposé | Résultat observé |
+|---|---|---|
+| **Valide** | `batch_002.csv` | `output/batch_002.csv.json`, 25 lignes en **509 ms**, document Cosmos, visible dans `/api/recent` |
+| **Invalide** | `colonne_manquante.csv` | `rejected/colonne_manquante.csv` + `.motif.json`, motif `colonnes manquantes: avg_temp`, posé aussi en métadonnée du blob |
+| **Empoisonné** | `pluie_negative.csv` | 422 de l'API, **5 tentatives**, puis `inference-requests-poison` |
+
+Extrait du résultat valide, prédit contre réel :
+
+| Pays | Culture | Année | Réel | Prédit | Inférence |
+|---|---|---|---|---|---|
+| Bangladesh | Soybeans | 2011 | 15 898 | 15 410 | 65,2 ms |
+| Bangladesh | Sweet potatoes | 2011 | 97 962 | 104 644 | 4,5 ms |
+| Bangladesh | Wheat | 2011 | 26 012 | 25 790 | 4,7 ms |
+
+### Le scénario d'échec, tel qu'enregistré
+
+```
+13:11:45  dispatcher : pluie_negative.csv mis en file
+13:11:50  worker : pluie_negative.csv (essai 1, id ffcf9ebe79e088f8c5914fed0ed9b278)
+13:12:42  worker : pluie_negative.csv (essai 2, id ffcf9ebe79e088f8c5914fed0ed9b278)
+13:13:19  worker : pluie_negative.csv (essai 3, id ffcf9ebe79e088f8c5914fed0ed9b278)
+13:13:51  worker : pluie_negative.csv (essai 4, id ffcf9ebe79e088f8c5914fed0ed9b278)
+13:14:23  worker : pluie_negative.csv (essai 5, id ffcf9ebe79e088f8c5914fed0ed9b278)
+          -> Message has reached MaxDequeueCount of 5.
+             Moving message to queue 'inference-requests-poison'.
+```
+
+Deux choses à y lire. Les tentatives sont espacées d'environ 30 secondes, ce qui correspond au
+`visibilityTimeout` du `host.json`. Et **l'identifiant d'idempotence est identique sur les cinq** :
+`sha256(nom du blob + ETag)` ne dépend pas du nombre de tentatives, donc rejouer un message ne
+crée jamais de doublon — ni dans `output/` grâce à l'`overwrite`, ni dans Cosmos grâce à l'upsert.
+
+Les exceptions du worker ne sont **pas rattrapées**, volontairement : c'est le runtime qui compte
+les échecs. Un `try/except` bien intentionné désactiverait tout le mécanisme de reprise.
+
 
 ## 7. Requêtes KQL
 
@@ -510,6 +584,8 @@ Un découpage aléatoire masquerait ce défaut en lui donnant des années posté
 | `DefaultResourceGroup-*` préexistant | Un `DefaultResourceGroup-PAR` subsiste d'un TP antérieur | Espace Log Analytics créé explicitement dans le groupe du projet pour ne pas en générer un nouveau ; celui qui existe sera traité avant la preuve de suppression finale |
 | **OIDC : sujet immuable non documenté** | `AADSTS700213: No matching federated identity record found for presented assertion subject 'repo:leticiaBen@93777455/pipeline-ml-azure-crop-yield@1469854412:environment:production'` | GitHub présente désormais un sujet contenant les **identifiants numériques** du compte et du dépôt, et non les seuls noms. L'énoncé donne la forme `repo:<compte>/<depot>:environment:production`, qui ne correspond plus. Une seconde identification fédérée a été créée avec le sujet exact lu dans le message d'erreur ; les deux coexistent. |
 | GHCR répond 404 au lieu de 406 | Vérification d'existence d'image en échec alors que l'image était publiée | L'en-tête `Accept` ne couvrait pas `application/vnd.oci.image.manifest.v1+json`, le type réel du manifeste. GHCR répond alors 404, ce qui fait croire à une image absente. Remplacé par `docker manifest inspect`, qui négocie lui-même les types. |
+| **Encodage des messages de file** | Le message atteint `maxDequeueCount` en 6 secondes et part en file poison **sans aucune trace du worker** | Le déclencheur Functions attend du **Base64** (`QueuesOptions.MessageEncoding`, visible dans les traces de démarrage), alors que le SDK `azure-storage-queue` n'encode rien par défaut. La liaison échoue avant le code utilisateur, d'où l'absence de trace. Corrigé par `TextBase64EncodePolicy` côté dispatcher. |
+| **Nom du paramètre d'une fonction HTTP** | `0 functions loaded`, et un déploiement annoncé comme réussi | `@app.route` n'accepte pas d'`arg_name`, contrairement à `event_grid_trigger` et `queue_trigger` : le paramètre **doit** s'appeler `req`. Et cette seule erreur fait échouer l'indexation des **trois** fonctions. Cause visible uniquement dans Application Insights : `FunctionLoadError`. |
 | *à compléter au fil du projet* | | |
 
 ## 9. Structure du dépôt

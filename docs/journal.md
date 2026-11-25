@@ -19,13 +19,14 @@ Une ligne par séance de travail. Les durées sont à ajuster par chaque membre.
 | 24/11/2026 | leticiaBen | Passage du paquet GHCR en public et vérification de l'accès anonyme au registre | 0h10 | La visibilité d'un paquet GHCR n'est modifiable que dans l'interface web |
 | 24/11/2026 | leticiaBen | Section 4.6 : `deploy.yml`, création de l'application Container Apps, `/version` expose le commit, plan de tournage | 1h40 | Deux échecs de déploiement : vérification d'image bricolée, puis sujet OIDC immuable |
 | 25/11/2026 | leticiaBen | Correction du sujet OIDC, déploiement réussi et vérifié de bout en bout | 0h30 | — |
+| 25/11/2026 | leticiaBen | Section 4.3 : rôles de l'identité, abonnement Event Grid, épreuve des trois chemins | 1h00 | Encodage Base64 des messages de file : échec sans aucune trace |
 | 24/11/2026 | leticiaBen | Changement de sujet : passage de la classification de commentaires YouTube à la prédiction du rendement agricole. Lecture de l'énoncé, recadrage du dépôt, passage en public, renommage, environnement `production`, correction du `.gitignore`, réécriture des README | 0h45 | `.gitignore` ignorait `*.joblib`, ce qui empêchait de commiter le modèle versionné attendu par le livrable L1 |
 
 ## Total par membre
 
 | Membre | Total |
 |---|---|
-| leticiaBen | 11h30 |
+| leticiaBen | 12h30 |
 | NourMontacer01 | — |
 | Essid01 | — |
 | Yacine-BJ | — |
@@ -262,8 +263,45 @@ Il a fallu trois tentatives, chacune révélant un défaut réel : vérification
 puis sujet OIDC immuable, puis succès. Les deux premiers sont documentés dans le tableau des
 restrictions du README.
 
+**25/11/2026 — Encodage Base64 des messages de file : le bug le plus trompeur du projet.** Le
+premier dépôt valide n'a rien produit dans `output/`, et le message est parti en file poison en
+**6 secondes** — cinq tentatives — **sans qu'une seule trace du worker n'existe**. Tout orientait
+vers un problème de droits ou de réseau.
+
+La cause était dans la configuration que l'hôte journalise à son démarrage :
+`QueuesOptions { ... "MessageEncoding": "Base64" }`. Le déclencheur de file du runtime Functions
+attend du Base64, alors que le SDK `azure-storage-queue` n'encode rien par défaut. Le message
+partait donc en texte brut, la liaison échouait **avant** d'entrer dans le code utilisateur, et
+c'est exactement pourquoi aucune trace n'apparaissait. Corrigé par `TextBase64EncodePolicy` et
+`TextBase64DecodePolicy` sur le client de file, avec deux tests dédiés.
+
+Preuve visible du correctif : la file poison contient maintenant deux messages, `batch_001.csv` en
+texte brut (l'échec) et `pluie_negative.csv` en Base64 (le chemin voulu).
+
+Leçon : quand un message échoue sans laisser de trace applicative, c'est que l'échec est **avant**
+le code. Chercher dans la configuration de l'hôte, pas dans la logique métier.
+
+**25/11/2026 — Les trois chemins sont éprouvés.** Valide : `batch_002.csv` traité en 509 ms,
+25 lignes, document Cosmos écrit, visible dans `/api/recent`. Invalide : `colonne_manquante.csv`
+copié dans `rejected/` avec le motif « colonnes manquantes: avg_temp », posé à la fois dans un
+fichier `.motif.json` et en métadonnée du blob. Empoisonné : `pluie_negative.csv` refusé par l'API
+en 422, cinq tentatives espacées de 30 secondes, puis file poison.
+
+**25/11/2026 — L'idempotence est visible dans les traces.** Les cinq tentatives sur
+`pluie_negative.csv` portent le même identifiant `ffcf9ebe79e088f8c5914fed0ed9b278`, dérivé de
+`sha256(nom du blob + ETag)`. Il ne dépend pas du nombre de tentatives : rejouer un message ne
+crée donc aucun doublon, ni dans `output/` grâce à l'`overwrite`, ni dans Cosmos grâce à l'upsert.
+C'est une démonstration bien plus convaincante qu'une affirmation dans le README.
+
+**25/11/2026 — Moindre privilège de l'identité de la Function App.** Deux rôles Azure RBAC
+(`Storage Blob Data Owner`, `Storage Queue Data Contributor`) limités au **seul compte de
+stockage**, et `Cosmos DB Built-in Data Contributor` sur le compte Cosmos. Zéro attribution au
+niveau du groupe de ressources ou de l'abonnement, aucun rôle permettant d'attribuer des rôles.
+À noter : le rôle Cosmos n'est **pas** un rôle Azure RBAC et passe par
+`az cosmosdb sql role assignment create`, une commande distincte — confusion classique.
+
 ## Prochaines étapes
 
-- Section 4.3 : Function App unique, `function_app.py` (dispatcher, worker, recent).
+- Section 4.4 : page statique du tableau de bord dans `$web` (la fonction `recent` est déjà prête).
 - Capture d'écran des réplicas revenus à 0 (section 4.2), après un temps sans trafic.
 - Répartir les parties entre les 5 membres et confirmer l'effectif auprès de l'enseignante.

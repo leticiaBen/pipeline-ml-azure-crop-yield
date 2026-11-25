@@ -25,7 +25,11 @@ import requests
 from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
-from azure.storage.queue import QueueClient
+from azure.storage.queue import (
+    QueueClient,
+    TextBase64DecodePolicy,
+    TextBase64EncodePolicy,
+)
 
 # --- Reglages, tous par variables d'environnement ---------------------------
 COMPTE_STOCKAGE = os.environ.get("STORAGE_ACCOUNT_NAME", "")
@@ -72,11 +76,26 @@ def blobs() -> BlobServiceClient:
 
 
 def file_entree() -> QueueClient:
+    """File d'entree, avec encodage Base64 OBLIGATOIRE.
+
+    Le declencheur de file du runtime Functions attend du Base64 : sa
+    configuration par defaut est MessageEncoding = Base64, visible dans les
+    traces de demarrage de l'hote (QueuesOptions). Or le SDK
+    azure-storage-queue n'encode RIEN par defaut.
+
+    Sans ces deux politiques, le message part en texte brut, la liaison du
+    worker echoue AVANT d'entrer dans le code utilisateur, et le message
+    atteint maxDequeueCount en quelques secondes. Symptome trompeur : le
+    message arrive en file poison sans qu'aucune trace du worker n'existe, ce
+    qui laisse croire a un probleme de droits ou de reseau.
+    """
     global _file
     if _file is None:
         _file = QueueClient(
             f"https://{COMPTE_STOCKAGE}.queue.core.windows.net",
-            queue_name=FILE_ENTREE, credential=identifiants())
+            queue_name=FILE_ENTREE, credential=identifiants(),
+            message_encode_policy=TextBase64EncodePolicy(),
+            message_decode_policy=TextBase64DecodePolicy())
     return _file
 
 

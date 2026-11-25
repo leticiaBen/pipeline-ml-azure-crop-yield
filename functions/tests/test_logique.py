@@ -130,3 +130,41 @@ def test_identifiant_change_si_le_contenu_change():
     document. Sans l'ETag, un redepot ecraserait silencieusement le premier
     resultat."""
     assert _identifiant("b.csv", "0x1") != _identifiant("b.csv", "0x2")
+
+
+# --- interoperabilite avec le declencheur de file -------------------------
+def test_la_politique_base64_encode_bien():
+    """Verifie le mecanisme lui-meme, independamment de notre code."""
+    import base64
+
+    from azure.storage.queue import TextBase64EncodePolicy
+
+    clair = '{"blobName": "x.csv"}'
+    assert TextBase64EncodePolicy().encode(clair) == base64.b64encode(
+        clair.encode()).decode()
+
+
+def test_la_file_est_configuree_en_base64(monkeypatch):
+    """Le declencheur Functions attend du Base64 : sa configuration par defaut
+    est MessageEncoding = Base64, visible dans les traces QueuesOptions de
+    l'hote. Le SDK azure-storage-queue, lui, n'encode rien par defaut.
+
+    Sans ces politiques, le message part en texte brut, la liaison du worker
+    echoue AVANT le code utilisateur, et le message atteint maxDequeueCount en
+    quelques secondes — sans laisser une seule trace du worker. C'est un bug
+    tres couteux a diagnostiquer, d'ou ce test.
+
+    On inspecte des attributs prives du client : c'est assume, le SDK n'expose
+    pas ces politiques autrement."""
+    from azure.core.credentials import AzureSasCredential
+    from azure.storage.queue import TextBase64DecodePolicy, TextBase64EncodePolicy
+
+    monkeypatch.setattr(fa, "identifiants",
+                        lambda: AzureSasCredential("sv=2020-01-01&sig=factice"))
+    monkeypatch.setattr(fa, "COMPTE_STOCKAGE", "comptefactice")
+    monkeypatch.setattr(fa, "_file", None)
+
+    client = fa.file_entree()
+    assert isinstance(client._message_encode_policy, TextBase64EncodePolicy)
+    assert isinstance(client._message_decode_policy, TextBase64DecodePolicy)
+    fa._file = None
